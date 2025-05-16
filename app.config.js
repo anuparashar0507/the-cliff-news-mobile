@@ -7,11 +7,11 @@ module.exports = {
     icon: './assets/images/icon.png',
     scheme: 'thecliffnews',
     userInterfaceStyle: 'automatic',
-    splash: {
-      image: './assets/images/splash.png',
-      resizeMode: 'contain',
-      backgroundColor: '#FFA500',
-    },
+    // splash: {
+    //   image: './assets/images/splash.png',
+    //   resizeMode: 'contain',
+    //   backgroundColor: '#FFA500',
+    // },
     assetBundlePatterns: ['**/*'],
     ios: {
       supportsTablet: true,
@@ -46,7 +46,7 @@ module.exports = {
       [
         'onesignal-expo-plugin',
         {
-          mode: 'development',
+          mode: 'production',
         },
       ],
     ],
