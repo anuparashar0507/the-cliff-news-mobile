@@ -43,7 +43,7 @@ module.exports = {
         {
           mode:
             process.env.APP_ENV === 'production' ? 'production' : 'development',
-          devTeam: 'YOUR_APPLE_DEVELOPMENT_TEAM_ID',
+          devTeam: 'D9752925GN',
         },
       ],
     ],
