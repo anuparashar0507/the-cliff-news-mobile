@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { StyleSheet, View, ActivityIndicator, Platform } from 'react-native';
+import { StyleSheet, View, Platform } from 'react-native';
 import { WebView, WebViewNavigation } from 'react-native-webview';
 import { useState, useRef, useCallback } from 'react';
 import { COLORS } from '@/constants/Theme';
@@ -8,8 +8,10 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import WebViewError from '@/components/WebViewError'; // Assuming this component exists
-import WebViewLoading from '@/components/WebViewLoading'; // Assuming this component exists
+import WebViewError from '@/components/WebViewError';
+import WebViewLoading from '@/components/WebViewLoading';
+import { useAppContext } from '@/context/AppContext';
+import { OneSignal } from 'react-native-onesignal';
 
 const HOME_URL = 'https://thecliffnews.in/';
 
@@ -18,26 +20,92 @@ export default function HomeScreen() {
   const [hasError, setHasError] = useState(false);
   const webViewRef = useRef<WebView>(null);
   const params = useLocalSearchParams<{ urlToLoad?: string }>();
-  const [currentUrl, setCurrentUrl] = useState(params.urlToLoad || HOME_URL);
-  // const [targetUrl, setTargetUrl] = useState(params.urlToLoad || HOME_URL);
-  const insets = useSafeAreaInsets(); // Get safe area insets
+  const { requestNotificationPermission, loadUrl } = useAppContext();
+  const [currentUrl, setCurrentUrl] = useState(
+    params.urlToLoad || loadUrl || HOME_URL
+  );
+  const insets = useSafeAreaInsets();
+
+  // Effect to handle notification-triggered URLs
+  useEffect(() => {
+    if (loadUrl) {
+      console.log('Loading URL from notification:', loadUrl);
+      setCurrentUrl(loadUrl);
+    }
+  }, [loadUrl]);
+
+  // Effect to handle URL params
+  useEffect(() => {
+    if (params.urlToLoad && params.urlToLoad !== currentUrl) {
+      console.log('Loading URL from params:', params.urlToLoad);
+      setCurrentUrl(params.urlToLoad);
+    }
+  }, [params.urlToLoad]);
+
+  // Request notification permission when the app first loads
+  useEffect(() => {
+    // Wait a bit before showing the permission prompt to not overwhelm the user
+    const timer = setTimeout(() => {
+      requestNotificationPermission();
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   // JavaScript to inject for handling potential fixed headers under the notch/Dynamic Island
-  // This attempts to add padding to the body. If the site has a specific fixed header,
-  // you might need to target that element directly (e.g., document.querySelector('#site-header')).
   const injectedJavaScript = `
     (function() {
       const topPadding = ${insets.top};
       if (topPadding > 0) {
         document.body.style.paddingTop = topPadding + 'px';
-        // Example for a specific fixed header:
-        // const fixedHeader = document.querySelector('header#main-header'); // Adjust selector
-        // if (fixedHeader) {
-        //   fixedHeader.style.marginTop = topPadding + 'px';
-        // }
+      }
+
+      // Set up communication with OneSignal if it exists on the page
+      window.addEventListener('message', function(event) {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'ONESIGNAL_NOTIFICATION_PERMISSION') {
+            // Send message to React Native
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'ONESIGNAL_PERMISSION_REQUEST'
+            }));
+          }
+        } catch (e) {
+          // Not a JSON message or not for us
+        }
+      });
+
+      // Intercept OneSignal initialization if it exists
+      // This helps coordinate browser and app notifications
+      document.addEventListener('onesignal.prompt.native', function(e) {
+        e.preventDefault();
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'ONESIGNAL_PERMISSION_REQUEST'
+        }));
+      });
+
+      // For tracking article views - useful for analytics
+      const trackArticleView = () => {
+        const articleTitle = document.querySelector('h1.entry-title')?.textContent;
+        const articleCategory = document.querySelector('.cat-links a')?.textContent;
+        
+        if (articleTitle) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'ARTICLE_VIEW',
+            title: articleTitle,
+            category: articleCategory || 'Uncategorized'
+          }));
+        }
+      };
+
+      // Track page views after content is fully loaded
+      if (document.readyState === 'complete') {
+        trackArticleView();
+      } else {
+        window.addEventListener('load', trackArticleView);
       }
     })();
-    true; // Required for injectedJavaScript to work reliably
+    true; // Required
   `;
 
   const handleLoadStart = () => {
@@ -64,28 +132,48 @@ export default function HomeScreen() {
 
   const onNavigationStateChange = (navState: WebViewNavigation) => {
     setCurrentUrl(navState.url);
-    // You can add logic here if you want to restrict navigation or handle specific URLs
-  };
-  useEffect(() => {
-    if (params.urlToLoad && params.urlToLoad !== currentUrl) {
-      console.log(
-        'HomeScreen: Received new urlToLoad from params:',
-        params.urlToLoad
-      );
-      setCurrentUrl(params.urlToLoad);
-      // webViewRef.current?.loadUrl(params.urlToLoad); // Or let source prop handle it
+
+    // Track page views for analytics and segmentation
+    // This helps with targeting notifications
+    if (Platform.OS !== 'web') {
+      OneSignal.User.addTag('last_visited_page', navState.url);
     }
-  }, [params.urlToLoad]);
+  };
+
+  // Handle messages from the WebView
+  const handleWebViewMessage = (event: any) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+
+      switch (data.type) {
+        case 'ONESIGNAL_PERMISSION_REQUEST':
+          // Handle permission request from the website
+          requestNotificationPermission();
+          break;
+
+        case 'ARTICLE_VIEW':
+          // Track article views for better notification targeting
+          if (Platform.OS !== 'web' && data.title) {
+            OneSignal.User.addTags({
+              last_article_title: data.title,
+              last_article_category: data.category || 'Uncategorized',
+              last_article_timestamp: new Date().toISOString(),
+            });
+          }
+          break;
+
+        default:
+          console.log('Unknown message type:', data.type);
+      }
+    } catch (error) {
+      // Not a JSON message or not for us
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
-      {/* The top safe area is handled by injecting JS into the WebView for web content.
-          The SafeAreaView itself protects the RN UI (like a custom header if you had one). */}
       {hasError ? (
-        <WebViewError
-          onReload={handleReload}
-          // message="Failed to load content."
-        />
+        <WebViewError onReload={handleReload} />
       ) : (
         <>
           <WebView
@@ -96,20 +184,15 @@ export default function HomeScreen() {
             onLoadEnd={handleLoadEnd}
             onError={handleError}
             onNavigationStateChange={onNavigationStateChange}
-            // Injected JS for safe area padding (Dynamic Island)
-            // This runs after the page loads for the first time.
-            // For scripts that need to run earlier, use injectedJavaScriptBeforeContentLoaded.
             injectedJavaScript={injectedJavaScript}
-            onMessage={() => {}} // Required if injectedJavaScript is used and returns a value
-            // Standard props for better compatibility and user experience
+            onMessage={handleWebViewMessage}
             javaScriptEnabled={true}
             domStorageEnabled={true}
-            sharedCookiesEnabled={true} // Useful if users log in on the website
+            sharedCookiesEnabled={true}
             allowsInlineMediaPlayback={true}
-            mediaPlaybackRequiresUserAction={Platform.OS !== 'android'} // iOS requires user action for autoplay
-            pullToRefreshEnabled={true} // Allows pull-to-refresh gesture
-            // Performance
-            applicationNameForUserAgent="TheCliffNewsApp/1.0" // Optional: Custom User-Agent
+            mediaPlaybackRequiresUserAction={Platform.OS !== 'android'}
+            pullToRefreshEnabled={true}
+            applicationNameForUserAgent="TheCliffNewsApp/1.0"
           />
           {isLoading && <WebViewLoading />}
         </>
@@ -121,10 +204,10 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.white, // Or your app's background color
+    backgroundColor: COLORS.white,
   },
   webview: {
     flex: 1,
-    backgroundColor: COLORS.white, // Ensures WebView background matches if content is transparent initially
+    backgroundColor: COLORS.white,
   },
 });

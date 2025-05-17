@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Stack, SplashScreen as ExpoRouterSplashScreen } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-// import { useFrameworkReady } from '@/hooks/useFrameworkReady'; // Assuming this is a custom hook
 import { useFonts } from 'expo-font';
 import {
   Merriweather_400Regular,
@@ -12,15 +11,15 @@ import {
   OpenSans_600SemiBold,
 } from '@expo-google-fonts/open-sans';
 import { AppProvider } from '@/context/AppContext';
-// Ensure this path is absolutely correct. Example: '@/components/SplashScreenComponent'
 import SplashScreenComponent from '@/components/splash';
+import { Platform } from 'react-native';
+import { OneSignal, LogLevel } from 'react-native-onesignal';
+import Constants from 'expo-constants';
 
 // Prevent native splash screen from auto-hiding
 ExpoRouterSplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  // const frameworkReady = useFrameworkReady();
-
   const [fontsLoaded, fontError] = useFonts({
     'Merriweather-Regular': Merriweather_400Regular,
     'Merriweather-Bold': Merriweather_700Bold,
@@ -29,6 +28,52 @@ export default function RootLayout() {
   });
 
   const [appIsReady, setAppIsReady] = useState(false);
+
+  // Initialize OneSignal on app startup
+  useEffect(() => {
+    if (Platform.OS !== 'web') {
+      initializeOneSignal();
+    }
+  }, []);
+
+  const initializeOneSignal = () => {
+    try {
+      // Get the OneSignal App ID from Expo constants
+      const oneSignalAppId = Constants.expoConfig?.extra?.oneSignalAppId || '';
+
+      if (!oneSignalAppId) {
+        console.error('OneSignal App ID is not configured correctly');
+        return;
+      }
+
+      console.log('Initializing OneSignal with App ID:', oneSignalAppId);
+
+      // Configure OneSignal for the news app use case
+      OneSignal.Debug.setLogLevel(LogLevel.Verbose); // Remove in production
+
+      // Initialize OneSignal
+      OneSignal.initialize(oneSignalAppId);
+
+      // Use device ID for identification since we don't have user accounts
+      const deviceId = Constants.installationId || `device_${Date.now()}`;
+      OneSignal.login(deviceId);
+
+      // Add device info tags
+      OneSignal.User.addTags({
+        app_platform: Platform.OS,
+        app_version: Constants.expoConfig?.version || '1.0.0',
+        device_type: Platform.OS === 'ios' ? 'iOS' : 'Android',
+        install_date: new Date().toISOString().split('T')[0],
+      });
+
+      // Configure In-App Messages (enabled by default)
+      OneSignal.InAppMessages.setPaused(false);
+
+      console.log('OneSignal initialized successfully');
+    } catch (error) {
+      console.error('Error initializing OneSignal:', error);
+    }
+  };
 
   useEffect(() => {
     console.log(
@@ -73,21 +118,16 @@ export default function RootLayout() {
 
   if (!appIsReady) {
     console.log('App not ready, rendering SplashScreenComponent.');
-    // CRITICAL: Verify that '@/assets/splash' correctly imports your SplashScreenComponent file.
-    // If this path is wrong, SplashScreenComponent might be undefined, and nothing will render here.
     if (!SplashScreenComponent) {
       console.error(
         'SplashScreenComponent is not imported correctly! Check the path.'
       );
-      // Optionally return a basic fallback loading view if SplashScreenComponent is missing
-      // return <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}><Text>Loading...</Text></View>;
     }
     return <SplashScreenComponent />;
   }
 
   if (fontError) {
     console.error('Font loading error:', fontError);
-    // Optionally, render an error message to the user
   }
 
   console.log('App is ready, rendering main app structure.');
