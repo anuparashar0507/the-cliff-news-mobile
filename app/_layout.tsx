@@ -32,12 +32,15 @@ export default function RootLayout() {
   // Initialize OneSignal on app startup
   useEffect(() => {
     if (Platform.OS !== 'web') {
+      console.log('Starting OneSignal initialization in RootLayout');
       initializeOneSignal();
     }
   }, []);
 
-  const initializeOneSignal = () => {
+  const initializeOneSignal = async () => {
     try {
+      console.log('OneSignal initialization function called');
+
       // Get the OneSignal App ID from Expo constants
       const oneSignalAppId = Constants.expoConfig?.extra?.oneSignalAppId || '';
 
@@ -46,30 +49,46 @@ export default function RootLayout() {
         return;
       }
 
-      console.log('Initializing OneSignal with App ID:', oneSignalAppId);
+      console.log('Using OneSignal App ID:', oneSignalAppId);
 
       // Configure OneSignal for the news app use case
-      OneSignal.Debug.setLogLevel(LogLevel.Verbose); // Remove in production
+      OneSignal.Debug.setLogLevel(LogLevel.Verbose); // Shows all logs for debugging
 
       // Initialize OneSignal
-      OneSignal.initialize(oneSignalAppId);
+      await OneSignal.initialize(oneSignalAppId);
+      console.log('OneSignal initialized successfully');
+
+      // Force notification permission prompt to appear immediately
+      // for testing purposes
+      const hasPermission = await OneSignal.Notifications.hasPermission;
+      console.log('Current notification permission status:', hasPermission);
+
+      if (!hasPermission) {
+        console.log('Requesting notification permission');
+        await OneSignal.Notifications.requestPermission(true);
+      }
+
+      // Check again after request
+      const permissionAfter = await OneSignal.Notifications.hasPermission;
+      console.log('Permission status after request:', permissionAfter);
 
       // Use device ID for identification since we don't have user accounts
       const deviceId = Constants.installationId || `device_${Date.now()}`;
-      OneSignal.login(deviceId);
+      await OneSignal.login(deviceId);
+      console.log('OneSignal login completed with device ID:', deviceId);
 
       // Add device info tags
-      OneSignal.User.addTags({
+      await OneSignal.User.addTags({
         app_platform: Platform.OS,
         app_version: Constants.expoConfig?.version || '1.0.0',
         device_type: Platform.OS === 'ios' ? 'iOS' : 'Android',
         install_date: new Date().toISOString().split('T')[0],
       });
+      console.log('Added device info tags to OneSignal');
 
-      // Configure In-App Messages (enabled by default)
-      OneSignal.InAppMessages.setPaused(false);
-
-      console.log('OneSignal initialized successfully');
+      // Send a test event to verify everything is working
+      OneSignal.Debug.setLogLevel(LogLevel.Verbose);
+      console.log('OneSignal setup complete');
     } catch (error) {
       console.error('Error initializing OneSignal:', error);
     }

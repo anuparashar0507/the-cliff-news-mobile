@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View, ActivityIndicator, Platform } from 'react-native';
+import { StyleSheet, View, Share, Platform } from 'react-native';
 import { WebView, WebViewNavigation } from 'react-native-webview';
 import { useState, useRef, useCallback } from 'react';
 import { COLORS } from '@/constants/Theme';
@@ -7,30 +7,57 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import WebViewError from '@/components/WebViewError'; // Assuming this component exists
-import WebViewLoading from '@/components/WebViewLoading'; // Assuming this component exists
+import WebViewError from '@/components/WebViewError';
+import WebViewLoading from '@/components/WebViewLoading';
+import EPaperHeader from '@/components/EPaperHeader';
 
-const EPAPER_URL = 'https://thecliffnews.in/index.php/e-paper/';
+const EPAPER_URL = 'https://thecliffnews.in/index.php/elementor-12046/';
 
 export default function EPaperScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [currentUrl, setCurrentUrl] = useState(EPAPER_URL);
   const webViewRef = useRef<WebView>(null);
-  const insets = useSafeAreaInsets(); // Get safe area insets
+  const insets = useSafeAreaInsets();
 
-  // JavaScript to inject for handling potential fixed headers under the notch/Dynamic Island
+  // JavaScript to inject for handling potential fixed headers and hiding site header
   const injectedJavaScript = `
     (function() {
+      // Handle safe area
       const topPadding = ${insets.top};
-      if (topPadding > 0) {
-        document.body.style.paddingTop = topPadding + 'px';
-        // If the e-paper site has a specific fixed header, target it:
-        // const ePaperHeader = document.querySelector('#ePaper-fixed-header'); // Adjust selector
-        // if (ePaperHeader) {
-        //   ePaperHeader.style.marginTop = topPadding + 'px';
-        // }
+      
+      // Find and hide the site header
+      function hideOriginalHeader() {
+        // Target the site header - update selectors based on your WordPress theme
+        const siteHeader = document.querySelector('header.site-header, #masthead, .main-header, #site-header');
+        if (siteHeader) {
+          siteHeader.style.display = 'none';
+        }
+        
+        // Hide admin bar if present
+        const adminBar = document.querySelector('#wpadminbar');
+        if (adminBar) {
+          adminBar.style.display = 'none';
+        }
+        
+        // Adjust body padding/margin to compensate for hidden header
+        document.body.style.paddingTop = '0px';
+        document.body.style.marginTop = '0px';
       }
+      
+      // Run immediately and after any potential dynamic content loads
+      hideOriginalHeader();
+      
+      // Also run after document fully loads
+      if (document.readyState === 'complete') {
+        hideOriginalHeader();
+      } else {
+        window.addEventListener('load', hideOriginalHeader);
+      }
+      
+      // Run periodically in case of delayed rendering
+      setTimeout(hideOriginalHeader, 500);
+      setTimeout(hideOriginalHeader, 1500);
     })();
     true; // Required
   `;
@@ -61,13 +88,28 @@ export default function EPaperScreen() {
     setCurrentUrl(navState.url);
   };
 
+  const handleShare = async () => {
+    try {
+      await Share.share({
+        message: 'Check out this E-Paper from The Cliff News!',
+        url: currentUrl,
+      });
+    } catch (error) {
+      console.error('Error sharing:', error);
+    }
+  };
+
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+    <View style={styles.container}>
+      <EPaperHeader
+        title="The Cliff E-Paper"
+        onRefresh={handleReload}
+        onShare={handleShare}
+        currentUrl={currentUrl}
+      />
+
       {hasError ? (
-        <WebViewError
-          onReload={handleReload}
-          // message="Failed to load E-Paper."
-        />
+        <WebViewError onReload={handleReload} />
       ) : (
         <>
           <WebView
@@ -91,14 +133,14 @@ export default function EPaperScreen() {
           {isLoading && <WebViewLoading />}
         </>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.background,
   },
   webview: {
     flex: 1,

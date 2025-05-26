@@ -12,7 +12,6 @@ import WebViewError from '@/components/WebViewError';
 import WebViewLoading from '@/components/WebViewLoading';
 import { useAppContext } from '@/context/AppContext';
 import { OneSignal } from 'react-native-onesignal';
-
 const HOME_URL = 'https://thecliffnews.in/';
 
 export default function HomeScreen() {
@@ -52,61 +51,60 @@ export default function HomeScreen() {
     return () => clearTimeout(timer);
   }, []);
 
-  // JavaScript to inject for handling potential fixed headers under the notch/Dynamic Island
   const injectedJavaScript = `
-    (function() {
-      const topPadding = ${insets.top};
-      if (topPadding > 0) {
-        document.body.style.paddingTop = topPadding + 'px';
-      }
+  (function() {
+    const topPadding = ${insets.top};
+    if (topPadding > 0) {
+      document.body.style.paddingTop = topPadding + 'px';
+    }
 
-      // Set up communication with OneSignal if it exists on the page
-      window.addEventListener('message', function(event) {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'ONESIGNAL_NOTIFICATION_PERMISSION') {
-            // Send message to React Native
-            window.ReactNativeWebView.postMessage(JSON.stringify({
-              type: 'ONESIGNAL_PERMISSION_REQUEST'
-            }));
-          }
-        } catch (e) {
-          // Not a JSON message or not for us
-        }
-      });
-
-      // Intercept OneSignal initialization if it exists
-      // This helps coordinate browser and app notifications
-      document.addEventListener('onesignal.prompt.native', function(e) {
-        e.preventDefault();
-        window.ReactNativeWebView.postMessage(JSON.stringify({
-          type: 'ONESIGNAL_PERMISSION_REQUEST'
-        }));
-      });
-
-      // For tracking article views - useful for analytics
-      const trackArticleView = () => {
-        const articleTitle = document.querySelector('h1.entry-title')?.textContent;
-        const articleCategory = document.querySelector('.cat-links a')?.textContent;
-        
-        if (articleTitle) {
+    // Set up communication with OneSignal if it exists on the page
+    window.addEventListener('message', function(event) {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'ONESIGNAL_NOTIFICATION_PERMISSION') {
+          // Send message to React Native
           window.ReactNativeWebView.postMessage(JSON.stringify({
-            type: 'ARTICLE_VIEW',
-            title: articleTitle,
-            category: articleCategory || 'Uncategorized'
+            type: 'ONESIGNAL_PERMISSION_REQUEST'
           }));
         }
-      };
-
-      // Track page views after content is fully loaded
-      if (document.readyState === 'complete') {
-        trackArticleView();
-      } else {
-        window.addEventListener('load', trackArticleView);
+      } catch (e) {
+        // Not a JSON message or not for us
       }
-    })();
-    true; // Required
-  `;
+    });
+
+    // Intercept OneSignal initialization if it exists
+    // This helps coordinate browser and app notifications
+    document.addEventListener('onesignal.prompt.native', function(e) {
+      e.preventDefault();
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        type: 'ONESIGNAL_PERMISSION_REQUEST'
+      }));
+    });
+
+    // For tracking article views - useful for analytics
+    const trackArticleView = () => {
+      const articleTitle = document.querySelector('h1.entry-title')?.textContent;
+      const articleCategory = document.querySelector('.cat-links a')?.textContent;
+      
+      if (articleTitle) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'ARTICLE_VIEW',
+          title: articleTitle,
+          category: articleCategory || 'Uncategorized'
+        }));
+      }
+    };
+
+    // Track page views after content is fully loaded
+    if (document.readyState === 'complete') {
+      trackArticleView();
+    } else {
+      window.addEventListener('load', trackArticleView);
+    }
+  })();
+  true; // Required
+`;
 
   const handleLoadStart = () => {
     setIsLoading(true);
