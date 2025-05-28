@@ -8,6 +8,7 @@ import React, {
 import { Platform, Alert } from 'react-native';
 import { OneSignal, LogLevel } from 'react-native-onesignal';
 import Constants from 'expo-constants';
+import NetInfo from '@react-native-community/netinfo';
 
 type AppContextType = {
   isOnline: boolean;
@@ -15,6 +16,7 @@ type AppContextType = {
   reloadTrigger: number;
   requestNotificationPermission: () => void;
   loadUrl: string | null;
+  isConnected: boolean; // FIXED: Added missing property
 };
 
 const AppContext = createContext<AppContextType>({
@@ -23,6 +25,7 @@ const AppContext = createContext<AppContextType>({
   reloadTrigger: 0,
   requestNotificationPermission: () => {},
   loadUrl: null,
+  isConnected: true, // FIXED: Added missing property
 });
 
 export const useAppContext = () => useContext(AppContext);
@@ -33,23 +36,40 @@ type AppProviderProps = {
 
 export const AppProvider = ({ children }: AppProviderProps) => {
   const [isOnline, setIsOnline] = useState(true);
+  const [isConnected, setIsConnected] = useState(true);
   const [reloadTrigger, setReloadTrigger] = useState(0);
-  const [isOneSignalInitialized, setIsOneSignalInitialized] = useState(false);
+  const [loadUrl, setLoadUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Enhanced network connectivity monitoring
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      const connected = state.isConnected ?? false;
+      setIsConnected(connected);
+      setIsOnline(connected);
+      console.log('Network state changed:', connected);
+    });
+
+    // Initial network state check
+    NetInfo.fetch().then((state) => {
+      const connected = state.isConnected ?? false;
+      setIsConnected(connected);
+      setIsOnline(connected);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const reloadWebViews = () => {
     setReloadTrigger((prev) => prev + 1);
   };
 
-  // Request notification permission explicitly
   const requestNotificationPermission = async () => {
     if (Platform.OS === 'web') return;
 
     try {
-      // Check current permission status
       const hasPermission = await OneSignal.Notifications.hasPermission;
 
       if (!hasPermission) {
-        // Show the prompt dialog to explain why notifications are useful
         Alert.alert(
           'Stay Updated',
           'Enable notifications to get the latest news and updates from The Cliff News.',
@@ -60,7 +80,14 @@ export const AppProvider = ({ children }: AppProviderProps) => {
             },
             {
               text: 'Enable',
-              onPress: () => OneSignal.Notifications.requestPermission(true),
+              onPress: async () => {
+                try {
+                  await OneSignal.Notifications.requestPermission(true);
+                  console.log('Notification permission granted');
+                } catch (error) {
+                  console.error('Error requesting permission:', error);
+                }
+              },
             },
           ]
         );
@@ -71,13 +98,11 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   };
 
   useEffect(() => {
-    // Only initialize OneSignal on native platforms, not on web
     if (Platform.OS !== 'web') {
       initializeOneSignal();
       setupNotificationListeners();
     }
 
-    // Clean up listeners when component unmounts
     return () => {
       if (Platform.OS !== 'web') {
         removeNotificationListeners();
@@ -85,12 +110,13 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     };
   }, []);
 
-  const initializeOneSignal = () => {
+  const initializeOneSignal = async () => {
     try {
-      // Enable verbose logging for debugging (remove in production)
+      console.log('Initializing OneSignal...');
+
+      // Set log level for debugging (remove in production)
       OneSignal.Debug.setLogLevel(LogLevel.Verbose);
 
-      // Get the OneSignal App ID from Expo constants
       const oneSignalAppId = Constants.expoConfig?.extra?.oneSignalAppId || '';
 
       if (!oneSignalAppId) {
@@ -98,74 +124,88 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         return;
       }
 
-      console.log('Initializing OneSignal with App ID:', oneSignalAppId);
+      console.log('OneSignal App ID:', oneSignalAppId);
 
       // Initialize OneSignal
       OneSignal.initialize(oneSignalAppId);
 
-      // Set app ID as external ID
-      // Since we don't have user authentication, using a device ID as the external ID
-      const deviceId = Constants.installationId || `device_${Date.now()}`;
-      OneSignal.login(deviceId);
+      // Wait for initialization
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      // Add device info tags for segmentation
-      OneSignal.User.addTags({
+      // Login with device ID
+      const deviceId = Constants.installationId || `device_${Date.now()}`;
+      await OneSignal.login(deviceId);
+      console.log('OneSignal login successful with device ID:', deviceId);
+
+      // Add user tags for better targeting
+      await OneSignal.User.addTags({
         app_platform: Platform.OS,
         app_version: Constants.expoConfig?.version || '1.0.0',
         device_type: Platform.OS === 'ios' ? 'iOS' : 'Android',
         install_date: new Date().toISOString().split('T')[0],
+        user_type: 'mobile_app_user',
+        language: 'hindi_english', // Based on your bilingual newspaper
       });
 
-      // Mark as initialized
-      setIsOneSignalInitialized(true);
+      console.log('OneSignal initialization completed successfully');
+
+      // Test notification permission status
+      const hasPermission = await OneSignal.Notifications.hasPermission;
+      console.log('Current notification permission:', hasPermission);
     } catch (error) {
       console.error('Error initializing OneSignal:', error);
     }
   };
 
-  // Define handler functions outside so we can reference them in removeEventListener
   const handleForegroundNotification = (event: any) => {
     console.log('Notification received in foreground:', event);
-    // Display the notification
+
+    // Extract URL from notification data
+    const notificationData = event.notification.additionalData;
+    if (notificationData?.url) {
+      console.log('Notification contains URL:', notificationData.url);
+    }
+
+    // Display the notification even in foreground
     event.notification.display();
   };
 
   const handleNotificationClick = (event: any) => {
     console.log('Notification clicked:', event);
 
-    // Get any custom data from the notification
     const customData = event.notification.additionalData;
 
-    // Handle deep links or specific actions based on notification data
     if (customData?.url) {
-      // Navigate to the specific URL in your WebView
-      // You'll need to implement a way to communicate this to your WebView components
-      // For example, using a global state or navigation parameter
-      console.log('Should navigate to URL:', customData.url);
-
-      // Example: You can update a global state or trigger navigation
+      console.log('Navigating to URL from notification:', customData.url);
       setLoadUrl(customData.url);
     }
+
+    // Track notification interaction
+    OneSignal.User.addTags({
+      last_notification_clicked: new Date().toISOString(),
+      last_notification_title: event.notification.title || '',
+    });
   };
 
-  // For handling deep links from notifications
-  const [loadUrl, setLoadUrl] = useState(null);
-
   const setupNotificationListeners = () => {
-    // Add event listeners using our named handler functions
+    console.log('Setting up OneSignal notification listeners');
+
     OneSignal.Notifications.addEventListener(
       'foregroundWillDisplay',
       handleForegroundNotification
     );
+
     OneSignal.Notifications.addEventListener('click', handleNotificationClick);
   };
 
   const removeNotificationListeners = () => {
-    // Remove event listeners using the same named handler functions
+    console.log('Removing OneSignal notification listeners');
+
     OneSignal.Notifications.removeEventListener(
       'foregroundWillDisplay',
       handleForegroundNotification
     );
+
     OneSignal.Notifications.removeEventListener(
       'click',
       handleNotificationClick
@@ -179,7 +219,8 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         reloadWebViews,
         reloadTrigger,
         requestNotificationPermission,
-        loadUrl, // Make available to consumers
+        loadUrl,
+        isConnected,
       }}
     >
       {children}

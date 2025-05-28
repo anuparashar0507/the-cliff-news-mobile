@@ -13,11 +13,12 @@ module.exports = {
       bundleIdentifier: 'com.thecliff.news',
       infoPlist: {
         UIBackgroundModes: ['remote-notification'],
+        ITSAppUsesNonExemptEncryption: false,
       },
       entitlements: {
         'aps-environment': 'development',
         'com.apple.security.application-groups': [
-          'group.${ios.bundleIdentifier}.onesignal',
+          'group.com.thecliff.news.onesignal',
         ],
       },
     },
