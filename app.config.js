@@ -40,11 +40,20 @@ module.exports = {
       'expo-web-browser',
       'expo-splash-screen',
       [
+        'expo-build-properties',
+        {
+          ios: {
+            deploymentTarget: '15.1',
+          },
+        },
+      ],
+      [
         'onesignal-expo-plugin',
         {
           mode:
             process.env.APP_ENV === 'production' ? 'production' : 'development',
           devTeam: 'D9752925GN',
+          iosNSEDeploymentTarget: '15.1',
         },
       ],
     ],
