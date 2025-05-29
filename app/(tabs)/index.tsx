@@ -4,27 +4,19 @@ import { WebView, WebViewNavigation } from 'react-native-webview';
 import { useCallback } from 'react';
 import { COLORS } from '@/constants/Theme';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-// import {
-//   SafeAreaView,
-//   useSafeAreaInsets,
-// } from 'react-native-safe-area-context';
 import WebViewError from '@/components/WebViewError';
 import WebViewLoading from '@/components/WebViewLoading';
 import OfflineMessage from '@/components/OfflineMessage';
 import MobileAppHeader from '@/components/MobileAppHeader';
 import { useAppContext } from '@/context/AppContext';
 import { OneSignal } from 'react-native-onesignal';
-import Animated, {
-  useSharedValue,
-  useAnimatedScrollHandler,
-} from 'react-native-reanimated';
+import Animated, { useSharedValue } from 'react-native-reanimated';
 
 const HOME_URL = 'https://thecliffnews.in/';
 
 export default function HomeScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
-  const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [currentTitle, setCurrentTitle] = useState('THE CLIFF NEWS');
   const [isArticlePage, setIsArticlePage] = useState(false);
   const webViewRef = useRef<WebView>(null);
@@ -37,7 +29,6 @@ export default function HomeScreen() {
   );
   const scrollY = useSharedValue(0);
 
-  // Detect if current page is an article or homepage
   const detectPageType = (url: string, title?: string) => {
     const isHome =
       url === HOME_URL || (url.endsWith('/') && !url.includes('/index.php/'));
@@ -47,13 +38,11 @@ export default function HomeScreen() {
     setCurrentTitle(isArticle && title ? title : 'THE CLIFF NEWS');
   };
 
-  // Enhanced JavaScript injection
   const injectedJavaScript = `
     (function() {
       console.log('Enhanced Mobile WebView Script Loaded');
       
       function optimizeForMobile() {
-        // Remove WordPress headers
         const elementsToHide = [
           '#masthead', '.site-header', 'header.site-header',
           '#wpadminbar', '.top-header', '.main-header', 
@@ -68,7 +57,6 @@ export default function HomeScreen() {
           }
         });
         
-        // Mobile optimization styles
         if (!document.getElementById('mobile-app-styles')) {
           const mobileStyles = document.createElement('style');
           mobileStyles.id = 'mobile-app-styles';
@@ -113,14 +101,11 @@ export default function HomeScreen() {
         }
       }
       
-      // Run optimization
       optimizeForMobile();
       
-      // Observer for dynamic content
       const observer = new MutationObserver(optimizeForMobile);
       observer.observe(document.body, { childList: true, subtree: true });
       
-      // Page info tracking
       function sendPageInfo() {
         const title = document.querySelector('h1.entry-title, .entry-title h1, h1')?.textContent?.trim();
         const category = document.querySelector('.cat-links a, .category a')?.textContent?.trim();
@@ -145,14 +130,12 @@ export default function HomeScreen() {
         }
       }
       
-      // Send page info on load and navigation
       if (document.readyState === 'complete') {
         sendPageInfo();
       } else {
         window.addEventListener('load', sendPageInfo);
       }
       
-      // Track page changes
       let lastUrl = window.location.href;
       setInterval(() => {
         if (window.location.href !== lastUrl) {
@@ -161,7 +144,6 @@ export default function HomeScreen() {
         }
       }, 1000);
       
-      // Scroll tracking
       let lastScrollY = 0;
       window.addEventListener('scroll', () => {
         const scrollY = window.pageYOffset;
@@ -173,7 +155,6 @@ export default function HomeScreen() {
         lastScrollY = scrollY;
       });
       
-      // Run periodically
       setInterval(optimizeForMobile, 3000);
       
     })();
@@ -267,30 +248,6 @@ export default function HomeScreen() {
     }
   };
 
-  const handleMenuPress = () => {
-    setIsMenuVisible(true);
-    // Implement slide-out menu
-  };
-
-  const handleSearchPress = () => {
-    webViewRef.current?.postMessage(
-      JSON.stringify({
-        action: 'focusSearch',
-      })
-    );
-  };
-
-  const handleNotificationPress = () => {
-    Alert.alert(
-      'Notifications',
-      'Stay updated with the latest news from The Cliff News',
-      [
-        { text: 'Settings', onPress: requestNotificationPermission },
-        { text: 'OK', style: 'cancel' },
-      ]
-    );
-  };
-
   const handleBackPress = () => {
     if (webViewRef.current) {
       webViewRef.current.goBack();
@@ -312,9 +269,6 @@ export default function HomeScreen() {
         title={currentTitle}
         showBackButton={isArticlePage}
         showHomeButton={isArticlePage}
-        onMenuPress={handleMenuPress}
-        onSearchPress={handleSearchPress}
-        onNotificationPress={handleNotificationPress}
         onRefreshPress={handleReload}
         onBackPress={handleBackPress}
         onHomePress={handleHomePress}

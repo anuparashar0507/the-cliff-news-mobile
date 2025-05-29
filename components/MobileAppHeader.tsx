@@ -7,22 +7,24 @@ import {
   Platform,
   StatusBar,
   Share,
+  Image,
+  Modal,
+  ScrollView,
 } from 'react-native';
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, usePathname } from 'expo-router';
 import { COLORS, TYPOGRAPHY } from '@/constants/Theme';
 import {
   Menu,
-  Search,
   Bell,
-  Share2,
   RefreshCw,
   ArrowLeft,
   Home,
   X,
+  BookOpen,
+  Gamepad2,
+  FileText,
+  Newspaper,
 } from 'lucide-react-native';
 import Animated, {
   useSharedValue,
@@ -33,46 +35,34 @@ import Animated, {
 
 interface MobileAppHeaderProps {
   title?: string;
-  showSearch?: boolean;
   showNotifications?: boolean;
-  showShare?: boolean;
   showRefresh?: boolean;
   showBackButton?: boolean;
   showHomeButton?: boolean;
-  onMenuPress?: () => void;
-  onSearchPress?: () => void;
   onNotificationPress?: () => void;
-  onSharePress?: () => void;
   onRefreshPress?: () => void;
   onBackPress?: () => void;
   onHomePress?: () => void;
   scrollY?: Animated.SharedValue<number>;
-  customActions?: React.ReactNode;
 }
 
 export default function MobileAppHeader({
   title = 'THE CLIFF NEWS',
-  showSearch = true,
-  showNotifications = true,
-  showShare = true,
+  showNotifications = false, // Disabled as requested
   showRefresh = true,
   showBackButton = false,
   showHomeButton = false,
-  onMenuPress,
-  onSearchPress,
   onNotificationPress,
-  onSharePress,
   onRefreshPress,
   onBackPress,
   onHomePress,
   scrollY,
-  customActions,
 }: MobileAppHeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const [isSearchVisible, setIsSearchVisible] = useState(false);
+  const [isMenuVisible, setIsMenuVisible] = useState(false);
 
-  // Determine if we should show back/home buttons based on current route
+  // Auto-detect navigation needs
   const isMainTab = [
     '/',
     '/(tabs)',
@@ -99,31 +89,6 @@ export default function MobileAppHeader({
     }
   };
 
-  const handleSearch = () => {
-    if (onSearchPress) {
-      onSearchPress();
-    } else {
-      setIsSearchVisible(!isSearchVisible);
-    }
-  };
-
-  const handleShare = async () => {
-    if (onSharePress) {
-      onSharePress();
-    } else {
-      try {
-        await Share.share({
-          message:
-            'Check out The Cliff News - National Daily Bilingual Newspaper',
-          url: 'https://thecliffnews.in/',
-          title: 'The Cliff News',
-        });
-      } catch (error) {
-        console.error('Error sharing:', error);
-      }
-    }
-  };
-
   const handleNotifications = () => {
     if (onNotificationPress) {
       onNotificationPress();
@@ -136,23 +101,28 @@ export default function MobileAppHeader({
     }
   };
 
-  const handleMenu = () => {
-    if (onMenuPress) {
-      onMenuPress();
-    }
+  const handleMenuPress = () => {
+    setIsMenuVisible(true);
   };
 
-  // Animated header that changes on scroll
+  const closeMenu = () => {
+    setIsMenuVisible(false);
+  };
+
+  const navigateTo = (route: string) => {
+    setIsMenuVisible(false);
+    router.push(route as any);
+  };
+
+  // Animated header
   const headerAnimatedStyle = useAnimatedStyle(() => {
     if (!scrollY) return {};
 
     const opacity = interpolate(scrollY.value, [0, 100], [0.95, 1], 'clamp');
 
-    const elevation = interpolate(scrollY.value, [0, 50], [0, 8], 'clamp');
-
     return {
       opacity,
-      elevation,
+      elevation: interpolate(scrollY.value, [0, 50], [0, 8], 'clamp'),
       shadowOpacity: interpolate(scrollY.value, [0, 50], [0, 0.3], 'clamp'),
     };
   });
@@ -167,7 +137,7 @@ export default function MobileAppHeader({
       <Animated.View style={[styles.headerContainer, headerAnimatedStyle]}>
         <SafeAreaView edges={['top']} style={styles.safeArea}>
           <View style={styles.header}>
-            {/* Left Section */}
+            {/* Left Section - Logo and Navigation */}
             <View style={styles.leftSection}>
               {shouldShowBack ? (
                 <TouchableOpacity
@@ -180,7 +150,7 @@ export default function MobileAppHeader({
               ) : (
                 <TouchableOpacity
                   style={styles.iconButton}
-                  onPress={handleMenu}
+                  onPress={handleMenuPress}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
                   <Menu size={24} color={COLORS.white} />
@@ -196,9 +166,16 @@ export default function MobileAppHeader({
                   <Home size={22} color={COLORS.white} />
                 </TouchableOpacity>
               )}
+
+              {/* App Logo */}
+              <Image
+                source={require('@/assets/images/icon.png')}
+                style={styles.logo}
+                resizeMode="contain"
+              />
             </View>
 
-            {/* Center Section */}
+            {/* Center Section - Title */}
             <View style={styles.centerSection}>
               <Text style={styles.headerTitle} numberOfLines={1}>
                 {title}
@@ -208,56 +185,117 @@ export default function MobileAppHeader({
               </Text>
             </View>
 
-            {/* Right Section */}
+            {/* Right Section - Actions */}
             <View style={styles.rightSection}>
-              {customActions || (
-                <>
-                  {showSearch && (
-                    <TouchableOpacity
-                      style={styles.iconButton}
-                      onPress={handleSearch}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Search size={20} color={COLORS.white} />
-                    </TouchableOpacity>
-                  )}
+              {showNotifications && (
+                <TouchableOpacity
+                  style={[styles.iconButton, styles.notificationButton]}
+                  onPress={handleNotifications}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Bell size={20} color={COLORS.white} />
+                  <View style={styles.notificationDot} />
+                </TouchableOpacity>
+              )}
 
-                  {showNotifications && (
-                    <TouchableOpacity
-                      style={[styles.iconButton, styles.notificationButton]}
-                      onPress={handleNotifications}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Bell size={20} color={COLORS.white} />
-                      <View style={styles.notificationDot} />
-                    </TouchableOpacity>
-                  )}
-
-                  {showRefresh && (
-                    <TouchableOpacity
-                      style={styles.iconButton}
-                      onPress={handleRefresh}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <RefreshCw size={20} color={COLORS.white} />
-                    </TouchableOpacity>
-                  )}
-
-                  {showShare && (
-                    <TouchableOpacity
-                      style={styles.iconButton}
-                      onPress={handleShare}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Share2 size={18} color={COLORS.white} />
-                    </TouchableOpacity>
-                  )}
-                </>
+              {showRefresh && (
+                <TouchableOpacity
+                  style={styles.iconButton}
+                  onPress={handleRefresh}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <RefreshCw size={20} color={COLORS.white} />
+                </TouchableOpacity>
               )}
             </View>
           </View>
         </SafeAreaView>
       </Animated.View>
+
+      {/* Slide-out Menu */}
+      <Modal
+        visible={isMenuVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={closeMenu}
+      >
+        <View style={styles.menuOverlay}>
+          <TouchableOpacity style={styles.menuBackdrop} onPress={closeMenu} />
+          <View style={styles.menuContainer}>
+            <View style={styles.menuHeader}>
+              <Image
+                source={require('@/assets/images/icon.png')}
+                style={styles.menuLogo}
+                resizeMode="contain"
+              />
+              <Text style={styles.menuTitle}>THE CLIFF NEWS</Text>
+              <TouchableOpacity onPress={closeMenu} style={styles.closeButton}>
+                <X size={24} color={COLORS.gray} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.menuContent}>
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => navigateTo('/(tabs)')}
+              >
+                <Newspaper size={24} color={COLORS.primary} />
+                <Text style={styles.menuItemText}>Home</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => navigateTo('/(tabs)/epaper')}
+              >
+                <FileText size={24} color={COLORS.primary} />
+                <Text style={styles.menuItemText}>E-Paper</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => navigateTo('/(tabs)/ebooks')}
+              >
+                <BookOpen size={24} color={COLORS.primary} />
+                <Text style={styles.menuItemText}>E-Books</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => navigateTo('/(tabs)/games')}
+              >
+                <Gamepad2 size={24} color={COLORS.primary} />
+                <Text style={styles.menuItemText}>Games</Text>
+              </TouchableOpacity>
+
+              <View style={styles.menuDivider} />
+
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => {
+                  setIsMenuVisible(false);
+                  Share.share({
+                    message:
+                      'Check out The Cliff News - National Daily Bilingual Newspaper',
+                    url: 'https://thecliffnews.in/',
+                  });
+                }}
+              >
+                <Text style={styles.menuItemText}>Share App</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => {
+                  setIsMenuVisible(false);
+                  // Add about/info functionality here
+                }}
+              >
+                <Text style={styles.menuItemText}>About</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -283,24 +321,29 @@ const styles = StyleSheet.create({
   leftSection: {
     flexDirection: 'row',
     alignItems: 'center',
-    width: 80,
+    flex: 1,
   },
   centerSection: {
-    flex: 1,
+    flex: 2,
     alignItems: 'center',
     paddingHorizontal: 16,
   },
   rightSection: {
     flexDirection: 'row',
     alignItems: 'center',
-    width: 120,
+    flex: 1,
     justifyContent: 'flex-end',
   },
   iconButton: {
     padding: 8,
     borderRadius: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    marginHorizontal: 2,
+    marginHorizontal: 4,
+  },
+  logo: {
+    width: 32,
+    height: 32,
+    marginLeft: 12,
   },
   notificationButton: {
     position: 'relative',
@@ -318,17 +361,75 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontFamily: TYPOGRAPHY.heading.fontFamily,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: COLORS.white,
     textAlign: 'center',
   },
   headerSubtitle: {
     fontFamily: TYPOGRAPHY.body.fontFamily,
-    fontSize: 10,
+    fontSize: 9,
     color: COLORS.white,
     opacity: 0.8,
     textAlign: 'center',
     marginTop: 2,
+  },
+  // Menu Styles
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  menuBackdrop: {
+    flex: 1,
+  },
+  menuContainer: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+    paddingBottom: 20,
+  },
+  menuHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.lightGray,
+  },
+  menuLogo: {
+    width: 40,
+    height: 40,
+  },
+  menuTitle: {
+    fontFamily: TYPOGRAPHY.heading.fontFamily,
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.primary,
+    marginLeft: 12,
+    flex: 1,
+  },
+  closeButton: {
+    padding: 8,
+  },
+  menuContent: {
+    flex: 1,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: COLORS.lightGray,
+  },
+  menuItemText: {
+    fontFamily: TYPOGRAPHY.body.fontFamily,
+    fontSize: 16,
+    color: COLORS.secondary,
+    marginLeft: 16,
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: COLORS.lightGray,
+    marginVertical: 8,
   },
 });

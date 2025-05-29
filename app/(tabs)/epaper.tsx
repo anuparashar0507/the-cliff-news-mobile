@@ -1,12 +1,8 @@
 import React from 'react';
-import { StyleSheet, View, Share, Platform } from 'react-native';
+import { StyleSheet, View, Platform } from 'react-native';
 import { WebView, WebViewNavigation } from 'react-native-webview';
 import { useState, useRef, useCallback } from 'react';
 import { COLORS } from '@/constants/Theme';
-// import {
-//   SafeAreaView,
-//   useSafeAreaInsets,
-// } from 'react-native-safe-area-context';
 import WebViewError from '@/components/WebViewError';
 import WebViewLoading from '@/components/WebViewLoading';
 import MobileAppHeader from '@/components/MobileAppHeader';
@@ -21,7 +17,6 @@ export default function EPaperScreen() {
 
   const injectedJavaScript = `
     (function() {
-      // Enhanced E-Paper optimization
       function optimizeEPaper() {
         const elementsToHide = [
           'header.site-header', '#masthead', '.main-header',
@@ -33,7 +28,6 @@ export default function EPaperScreen() {
           if (element) element.style.display = 'none';
         });
         
-        // E-Paper specific styles
         const epaperStyles = document.createElement('style');
         epaperStyles.textContent = \`
           body { padding-top: 0 !important; margin-top: 0 !important; }
@@ -82,25 +76,11 @@ export default function EPaperScreen() {
     setCurrentUrl(navState.url);
   };
 
-  const handleShare = async () => {
-    try {
-      await Share.share({
-        message: 'Check out this E-Paper from The Cliff News!',
-        url: currentUrl,
-      });
-    } catch (error) {
-      console.error('Error sharing:', error);
-    }
-  };
-
   return (
     <View style={styles.container}>
       <MobileAppHeader
         title="The Cliff E-Paper"
-        showSearch={false}
-        showNotifications={false}
         onRefreshPress={handleReload}
-        onSharePress={handleShare}
       />
 
       {hasError ? (

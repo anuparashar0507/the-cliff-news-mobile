@@ -42,7 +42,6 @@ export default function PDFReaderScreen() {
       const foundBook = getBookById(bookId);
       if (foundBook) {
         setBook(foundBook);
-        // Load bookmarks and reading progress here if implementing
       } else {
         Alert.alert('Error', 'Book not found', [
           { text: 'OK', onPress: () => router.back() },
@@ -54,22 +53,27 @@ export default function PDFReaderScreen() {
   const handleLoadComplete = (numberOfPages: number) => {
     setTotalPages(numberOfPages);
     setIsLoading(false);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
   };
 
   const handlePageChanged = (page: number) => {
     setCurrentPage(page);
-    // Save reading progress here if implementing
   };
 
   const handleZoomIn = () => {
     setScale((prevScale) => Math.min(prevScale + 0.2, 3.0));
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
   };
 
   const handleZoomOut = () => {
     setScale((prevScale) => Math.max(prevScale - 0.2, 0.5));
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
   };
 
   const handleBack = () => {
@@ -82,13 +86,13 @@ export default function PDFReaderScreen() {
 
   const handleBookmark = () => {
     setIsBookmarked(!isBookmarked);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    // Save bookmark here if implementing
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
   };
 
   const handleShare = () => {
     if (book) {
-      // Implement sharing functionality
       Alert.alert('Share', `Share "${book.title}" with others`);
     }
   };
@@ -119,7 +123,7 @@ export default function PDFReaderScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      {/* Enhanced Header with Navigation */}
+      {/* Enhanced Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <TouchableOpacity onPress={handleBack} style={styles.headerButton}>
@@ -159,7 +163,7 @@ export default function PDFReaderScreen() {
       {/* PDF Viewer */}
       <View style={styles.pdfContainer}>
         <Pdf
-          source={{ uri: book.pdfPath }}
+          source={book.pdfPath}
           onLoadComplete={handleLoadComplete}
           onPageChanged={handlePageChanged}
           onError={handleError}
@@ -170,7 +174,7 @@ export default function PDFReaderScreen() {
           maxScale={3.0}
           enablePaging={true}
           spacing={10}
-          fitPolicy={0} // Fit width
+          fitPolicy={0}
           horizontal={false}
         />
       </View>
@@ -258,7 +262,7 @@ const styles = StyleSheet.create({
   pdf: {
     flex: 1,
     width: width,
-    height: height - 200, // Account for header and control bar
+    height: height - 200,
   },
   controlBar: {
     flexDirection: 'row',
