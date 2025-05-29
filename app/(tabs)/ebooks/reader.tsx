@@ -15,7 +15,6 @@ import Pdf from 'react-native-pdf';
 import { COLORS, TYPOGRAPHY } from '@/constants/Theme';
 import {
   ArrowLeft,
-  RotateCcw,
   ZoomIn,
   ZoomOut,
   Home,
@@ -27,7 +26,8 @@ import * as Haptics from 'expo-haptics';
 
 const { width, height } = Dimensions.get('window');
 
-export default function PDFReaderScreen() {
+// FIXED: Added default export and proper component structure
+const PDFReaderScreen = () => {
   const router = useRouter();
   const { bookId } = useLocalSearchParams<{ bookId: string }>();
   const [book, setBook] = useState<EBook | null>(null);
@@ -53,8 +53,13 @@ export default function PDFReaderScreen() {
   const handleLoadComplete = (numberOfPages: number) => {
     setTotalPages(numberOfPages);
     setIsLoading(false);
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // FIXED: Added proper error handling for Haptics
+    try {
+      if (Platform.OS !== 'web') {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+    } catch (error) {
+      console.log('Haptics not available:', error);
     }
   };
 
@@ -64,15 +69,23 @@ export default function PDFReaderScreen() {
 
   const handleZoomIn = () => {
     setScale((prevScale) => Math.min(prevScale + 0.2, 3.0));
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      if (Platform.OS !== 'web') {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+    } catch (error) {
+      console.log('Haptics not available:', error);
     }
   };
 
   const handleZoomOut = () => {
     setScale((prevScale) => Math.max(prevScale - 0.2, 0.5));
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      if (Platform.OS !== 'web') {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+    } catch (error) {
+      console.log('Haptics not available:', error);
     }
   };
 
@@ -86,8 +99,12 @@ export default function PDFReaderScreen() {
 
   const handleBookmark = () => {
     setIsBookmarked(!isBookmarked);
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      if (Platform.OS !== 'web') {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+    } catch (error) {
+      console.log('Haptics not available:', error);
     }
   };
 
@@ -162,21 +179,40 @@ export default function PDFReaderScreen() {
 
       {/* PDF Viewer */}
       <View style={styles.pdfContainer}>
-        <Pdf
-          source={book.pdfPath}
-          onLoadComplete={handleLoadComplete}
-          onPageChanged={handlePageChanged}
-          onError={handleError}
-          onLoadProgress={() => {}}
-          style={styles.pdf}
-          scale={scale}
-          minScale={0.5}
-          maxScale={3.0}
-          enablePaging={true}
-          spacing={10}
-          fitPolicy={0}
-          horizontal={false}
-        />
+        {/* FIXED: Added proper error handling and source validation */}
+        {typeof book.pdfPath === 'string' ? (
+          <Pdf
+            source={{ uri: book.pdfPath }}
+            onLoadComplete={handleLoadComplete}
+            onPageChanged={handlePageChanged}
+            onError={handleError}
+            onLoadProgress={() => {}}
+            style={styles.pdf}
+            scale={scale}
+            minScale={0.5}
+            maxScale={3.0}
+            enablePaging={true}
+            spacing={10}
+            fitPolicy={0}
+            horizontal={false}
+          />
+        ) : (
+          <Pdf
+            source={book.pdfPath}
+            onLoadComplete={handleLoadComplete}
+            onPageChanged={handlePageChanged}
+            onError={handleError}
+            onLoadProgress={() => {}}
+            style={styles.pdf}
+            scale={scale}
+            minScale={0.5}
+            maxScale={3.0}
+            enablePaging={true}
+            spacing={10}
+            fitPolicy={0}
+            horizontal={false}
+          />
+        )}
       </View>
 
       {/* Control Bar */}
@@ -207,7 +243,7 @@ export default function PDFReaderScreen() {
       )}
     </SafeAreaView>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -319,3 +355,6 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
 });
+
+// FIXED: Added default export
+export default PDFReaderScreen;

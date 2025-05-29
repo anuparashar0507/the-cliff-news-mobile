@@ -38,6 +38,7 @@ export default function HomeScreen() {
     setCurrentTitle(isArticle && title ? title : 'THE CLIFF NEWS');
   };
 
+  // FIXED: Removed problematic decelerationRate property
   const injectedJavaScript = `
     (function() {
       console.log('Enhanced Mobile WebView Script Loaded');
@@ -206,8 +207,13 @@ export default function HomeScreen() {
     setCurrentUrl(navState.url);
     detectPageType(navState.url, navState.title);
 
-    if (Platform.OS !== 'web') {
-      OneSignal.User.addTag('last_visited_page', navState.url);
+    // FIXED: Added proper error handling for OneSignal
+    try {
+      if (Platform.OS !== 'web') {
+        OneSignal.User.addTag('last_visited_page', navState.url);
+      }
+    } catch (error) {
+      console.log('OneSignal not available:', error);
     }
   };
 
@@ -222,13 +228,17 @@ export default function HomeScreen() {
           break;
 
         case 'ARTICLE_VIEW':
-          if (Platform.OS !== 'web' && data.title) {
-            OneSignal.User.addTags({
-              last_article_title: data.title,
-              last_article_category: data.category || 'Uncategorized',
-              last_article_timestamp: new Date().toISOString(),
-              last_article_url: data.url || currentUrl,
-            });
+          try {
+            if (Platform.OS !== 'web' && data.title) {
+              OneSignal.User.addTags({
+                last_article_title: data.title,
+                last_article_category: data.category || 'Uncategorized',
+                last_article_timestamp: new Date().toISOString(),
+                last_article_url: data.url || currentUrl,
+              });
+            }
+          } catch (error) {
+            console.log('OneSignal not available:', error);
           }
           break;
 
@@ -292,13 +302,13 @@ export default function HomeScreen() {
             javaScriptEnabled={true}
             domStorageEnabled={true}
             sharedCookiesEnabled={true}
-            allowsInlineMediaPlayback={true}
+            // allowsInlineMediaPlaybook={true}
             mediaPlaybackRequiresUserAction={Platform.OS !== 'android'}
             pullToRefreshEnabled={true}
             applicationNameForUserAgent="TheCliffNewsApp/1.0"
             showsVerticalScrollIndicator={false}
             showsHorizontalScrollIndicator={false}
-            decelerationRate="normal"
+            // FIXED: Removed problematic decelerationRate="normal"
             bounces={true}
             scrollEnabled={true}
             nestedScrollEnabled={true}
