@@ -53,7 +53,7 @@ module.exports = {
           mode:
             process.env.APP_ENV === 'production' ? 'production' : 'development',
           devTeam: 'D9752925GN',
-          iosNSEDeploymentTarget: '15.1',
+          iPhoneDeploymentTarget: '15.1',
         },
       ],
     ],
