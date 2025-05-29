@@ -1,4 +1,3 @@
-// app/(tabs)/ebooks/reader.tsx (MOVED TO CORRECT LOCATION)
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
@@ -8,26 +7,42 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { WebView } from 'react-native-webview';
+import Pdf from 'react-native-pdf';
 import { COLORS, TYPOGRAPHY } from '@/constants/Theme';
-import { ArrowLeft, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react-native';
+import {
+  ArrowLeft,
+  RotateCcw,
+  ZoomIn,
+  ZoomOut,
+  Home,
+  Bookmark,
+  Share2,
+} from 'lucide-react-native';
 import { getBookById, EBook } from '@/utils/ebooksdata';
+import * as Haptics from 'expo-haptics';
+
+const { width, height } = Dimensions.get('window');
 
 export default function PDFReaderScreen() {
   const router = useRouter();
   const { bookId } = useLocalSearchParams<{ bookId: string }>();
   const [book, setBook] = useState<EBook | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [webViewRef, setWebViewRef] = useState<WebView | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [scale, setScale] = useState(1.0);
+  const [isBookmarked, setIsBookmarked] = useState(false);
 
   useEffect(() => {
     if (bookId) {
       const foundBook = getBookById(bookId);
       if (foundBook) {
         setBook(foundBook);
+        // Load bookmarks and reading progress here if implementing
       } else {
         Alert.alert('Error', 'Book not found', [
           { text: 'OK', onPress: () => router.back() },
@@ -36,16 +51,59 @@ export default function PDFReaderScreen() {
     }
   }, [bookId]);
 
+  const handleLoadComplete = (numberOfPages: number) => {
+    setTotalPages(numberOfPages);
+    setIsLoading(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const handlePageChanged = (page: number) => {
+    setCurrentPage(page);
+    // Save reading progress here if implementing
+  };
+
   const handleZoomIn = () => {
-    webViewRef?.postMessage(JSON.stringify({ action: 'zoomIn' }));
+    setScale((prevScale) => Math.min(prevScale + 0.2, 3.0));
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const handleZoomOut = () => {
-    webViewRef?.postMessage(JSON.stringify({ action: 'zoomOut' }));
+    setScale((prevScale) => Math.max(prevScale - 0.2, 0.5));
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
-  const handleReload = () => {
-    webViewRef?.reload();
+  const handleBack = () => {
+    router.back();
+  };
+
+  const handleHome = () => {
+    router.push('/(tabs)');
+  };
+
+  const handleBookmark = () => {
+    setIsBookmarked(!isBookmarked);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Save bookmark here if implementing
+  };
+
+  const handleShare = () => {
+    if (book) {
+      // Implement sharing functionality
+      Alert.alert('Share', `Share "${book.title}" with others`);
+    }
+  };
+
+  const handleError = (error: any) => {
+    console.error('PDF Error:', error);
+    setIsLoading(false);
+    Alert.alert(
+      'Error Loading PDF',
+      'Failed to load the book. Please try again.',
+      [
+        { text: 'Retry', onPress: () => setIsLoading(true) },
+        { text: 'Go Back', onPress: () => router.back() },
+      ]
+    );
   };
 
   if (!book) {
@@ -61,62 +119,82 @@ export default function PDFReaderScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      {/* Enhanced Header with Navigation */}
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.headerButton}
-        >
-          <ArrowLeft size={24} color={COLORS.white} />
-        </TouchableOpacity>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity onPress={handleBack} style={styles.headerButton}>
+            <ArrowLeft size={24} color={COLORS.white} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleHome} style={styles.headerButton}>
+            <Home size={22} color={COLORS.white} />
+          </TouchableOpacity>
+        </View>
 
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle} numberOfLines={1}>
             {book.title}
           </Text>
           <Text style={styles.headerSubtitle} numberOfLines={1}>
-            by {book.author}
+            by {book.author} • Page {currentPage} of {totalPages}
           </Text>
         </View>
 
-        <View style={styles.headerActions}>
-          <TouchableOpacity onPress={handleZoomOut} style={styles.headerButton}>
-            <ZoomOut size={20} color={COLORS.white} />
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            onPress={handleBookmark}
+            style={styles.headerButton}
+          >
+            <Bookmark
+              size={20}
+              color={isBookmarked ? COLORS.warning : COLORS.white}
+              fill={isBookmarked ? COLORS.warning : 'none'}
+            />
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleZoomIn} style={styles.headerButton}>
-            <ZoomIn size={20} color={COLORS.white} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleReload} style={styles.headerButton}>
-            <RotateCcw size={20} color={COLORS.white} />
+          <TouchableOpacity onPress={handleShare} style={styles.headerButton}>
+            <Share2 size={20} color={COLORS.white} />
           </TouchableOpacity>
         </View>
       </View>
 
-      <WebView
-        ref={setWebViewRef}
-        source={{ uri: book.pdfPath }}
-        style={styles.webview}
-        onLoadStart={() => setIsLoading(true)}
-        onLoadEnd={() => setIsLoading(false)}
-        onError={() => {
-          setIsLoading(false);
-          Alert.alert('Error', 'Failed to load PDF');
-        }}
-        javaScriptEnabled={true}
-        domStorageEnabled={true}
-        startInLoadingState={true}
-        scalesPageToFit={Platform.OS === 'android'}
-        injectedJavaScript={`
-          document.addEventListener('message', function(event) {
-            const data = JSON.parse(event.data);
-            if (data.action === 'zoomIn') {
-              document.body.style.zoom = (parseFloat(document.body.style.zoom || 1) + 0.1).toString();
-            } else if (data.action === 'zoomOut') {
-              document.body.style.zoom = Math.max(0.5, parseFloat(document.body.style.zoom || 1) - 0.1).toString();
-            }
-          });
-        `}
-      />
+      {/* PDF Viewer */}
+      <View style={styles.pdfContainer}>
+        <Pdf
+          source={{ uri: book.pdfPath }}
+          onLoadComplete={handleLoadComplete}
+          onPageChanged={handlePageChanged}
+          onError={handleError}
+          onLoadProgress={() => {}}
+          style={styles.pdf}
+          scale={scale}
+          minScale={0.5}
+          maxScale={3.0}
+          enablePaging={true}
+          spacing={10}
+          fitPolicy={0} // Fit width
+          horizontal={false}
+        />
+      </View>
 
+      {/* Control Bar */}
+      <View style={styles.controlBar}>
+        <TouchableOpacity onPress={handleZoomOut} style={styles.controlButton}>
+          <ZoomOut size={20} color={COLORS.primary} />
+          <Text style={styles.controlButtonText}>Zoom Out</Text>
+        </TouchableOpacity>
+
+        <View style={styles.pageInfo}>
+          <Text style={styles.pageText}>
+            {currentPage} / {totalPages}
+          </Text>
+        </View>
+
+        <TouchableOpacity onPress={handleZoomIn} style={styles.controlButton}>
+          <ZoomIn size={20} color={COLORS.primary} />
+          <Text style={styles.controlButtonText}>Zoom In</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Loading Overlay */}
       {isLoading && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={COLORS.primary} />
@@ -144,29 +222,76 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
   },
-  headerButton: {
-    padding: 8,
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   headerCenter: {
     flex: 1,
     marginHorizontal: 16,
+    alignItems: 'center',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerButton: {
+    padding: 8,
+    marginHorizontal: 4,
   },
   headerTitle: {
     fontFamily: TYPOGRAPHY.heading.fontFamily,
-    fontSize: 18,
+    fontSize: 16,
     color: COLORS.white,
+    fontWeight: 'bold',
   },
   headerSubtitle: {
     fontFamily: TYPOGRAPHY.body.fontFamily,
-    fontSize: 14,
+    fontSize: 12,
     color: COLORS.white,
     opacity: 0.9,
   },
-  headerActions: {
-    flexDirection: 'row',
-  },
-  webview: {
+  pdfContainer: {
     flex: 1,
+    backgroundColor: COLORS.white,
+  },
+  pdf: {
+    flex: 1,
+    width: width,
+    height: height - 200, // Account for header and control bar
+  },
+  controlBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLORS.surfaceLight,
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.lightGray,
+  },
+  controlButton: {
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    backgroundColor: COLORS.lightGray,
+    borderRadius: 20,
+    minWidth: 80,
+  },
+  controlButtonText: {
+    fontFamily: TYPOGRAPHY.body.fontFamily,
+    fontSize: 12,
+    color: COLORS.primary,
+    marginTop: 4,
+  },
+  pageInfo: {
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  pageText: {
+    fontFamily: TYPOGRAPHY.emphasis.fontFamily,
+    fontSize: 16,
+    color: COLORS.secondary,
   },
   loadingContainer: {
     flex: 1,

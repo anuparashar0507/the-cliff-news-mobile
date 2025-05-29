@@ -3,11 +3,11 @@ import { StyleSheet, View, Platform, Alert } from 'react-native';
 import { WebView, WebViewNavigation } from 'react-native-webview';
 import { useCallback } from 'react';
 import { COLORS } from '@/constants/Theme';
-import { useLocalSearchParams } from 'expo-router';
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+// import {
+//   SafeAreaView,
+//   useSafeAreaInsets,
+// } from 'react-native-safe-area-context';
 import WebViewError from '@/components/WebViewError';
 import WebViewLoading from '@/components/WebViewLoading';
 import OfflineMessage from '@/components/OfflineMessage';
@@ -25,151 +25,143 @@ export default function HomeScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
+  const [currentTitle, setCurrentTitle] = useState('THE CLIFF NEWS');
+  const [isArticlePage, setIsArticlePage] = useState(false);
   const webViewRef = useRef<WebView>(null);
+  const router = useRouter();
   const params = useLocalSearchParams<{ urlToLoad?: string }>();
   const { requestNotificationPermission, loadUrl, isConnected } =
     useAppContext();
   const [currentUrl, setCurrentUrl] = useState(
     params.urlToLoad || loadUrl || HOME_URL
   );
-  const insets = useSafeAreaInsets();
   const scrollY = useSharedValue(0);
 
-  // Enhanced JavaScript injection to remove WordPress header and improve mobile experience
+  // Detect if current page is an article or homepage
+  const detectPageType = (url: string, title?: string) => {
+    const isHome =
+      url === HOME_URL || (url.endsWith('/') && !url.includes('/index.php/'));
+    const isArticle = url.includes('/index.php/') && url !== HOME_URL;
+
+    setIsArticlePage(isArticle);
+    setCurrentTitle(isArticle && title ? title : 'THE CLIFF NEWS');
+  };
+
+  // Enhanced JavaScript injection
   const injectedJavaScript = `
     (function() {
-      console.log('Mobile app WebView script loaded');
+      console.log('Enhanced Mobile WebView Script Loaded');
       
-      // Function to remove WordPress header and improve mobile experience
       function optimizeForMobile() {
-        // Remove the main site header
-        const siteHeader = document.querySelector('#masthead, .site-header, header.site-header');
-        if (siteHeader) {
-          siteHeader.style.display = 'none';
-          console.log('Site header removed');
+        // Remove WordPress headers
+        const elementsToHide = [
+          '#masthead', '.site-header', 'header.site-header',
+          '#wpadminbar', '.top-header', '.main-header', 
+          '#site-navigation', '.main-navigation',
+          '.ticker-item-wrap', '.top-ticker-news'
+        ];
+        
+        elementsToHide.forEach(selector => {
+          const element = document.querySelector(selector);
+          if (element) {
+            element.style.display = 'none';
+          }
+        });
+        
+        // Mobile optimization styles
+        if (!document.getElementById('mobile-app-styles')) {
+          const mobileStyles = document.createElement('style');
+          mobileStyles.id = 'mobile-app-styles';
+          mobileStyles.textContent = \`
+            body {
+              font-size: 16px !important;
+              line-height: 1.6 !important;
+              padding-top: 0 !important;
+              margin-top: 0 !important;
+            }
+            .site-content {
+              padding-top: 0 !important;
+              margin-top: 0 !important;
+            }
+            article {
+              padding: 15px !important;
+              margin-bottom: 20px !important;
+            }
+            .entry-title, h1 {
+              font-size: 24px !important;
+              margin-bottom: 15px !important;
+              line-height: 1.3 !important;
+            }
+            .entry-content {
+              font-size: 16px !important;
+              line-height: 1.6 !important;
+            }
+            img {
+              max-width: 100% !important;
+              height: auto !important;
+              border-radius: 8px !important;
+            }
+            p {
+              margin-bottom: 16px !important;
+            }
+            .wp-block-image {
+              text-align: center !important;
+              margin: 20px 0 !important;
+            }
+          \`;
+          document.head.appendChild(mobileStyles);
         }
-        
-        // Remove admin bar
-        const adminBar = document.querySelector('#wpadminbar');
-        if (adminBar) {
-          adminBar.style.display = 'none';
-          console.log('Admin bar removed');
-        }
-        
-        // Remove top header section specifically
-        const topHeader = document.querySelector('.top-header');
-        if (topHeader) {
-          topHeader.style.display = 'none';
-          console.log('Top header removed');
-        }
-        
-        // Remove main header section
-        const mainHeader = document.querySelector('.main-header');
-        if (mainHeader) {
-          mainHeader.style.display = 'none';
-          console.log('Main header removed');
-        }
-        
-        // Remove navigation menu
-        const navigation = document.querySelector('#site-navigation, .main-navigation');
-        if (navigation) {
-          navigation.style.display = 'none';
-          console.log('Navigation removed');
-        }
-        
-        // Adjust body styling for mobile
-        document.body.style.paddingTop = '0px';
-        document.body.style.marginTop = '0px';
-        
-        // Add mobile-optimized styles
-        const mobileStyles = document.createElement('style');
-        mobileStyles.textContent = \`
-          body {
-            font-size: 16px !important;
-            line-height: 1.6 !important;
-          }
-          .site-content {
-            padding-top: 0 !important;
-            margin-top: 0 !important;
-          }
-          article {
-            padding: 15px !important;
-          }
-          .entry-title {
-            font-size: 24px !important;
-            margin-bottom: 15px !important;
-          }
-          .entry-content {
-            font-size: 16px !important;
-            line-height: 1.6 !important;
-          }
-          img {
-            max-width: 100% !important;
-            height: auto !important;
-          }
-          .ticker-item-wrap, .top-ticker-news {
-            display: none !important;
-          }
-        \`;
-        document.head.appendChild(mobileStyles);
-        
-        console.log('Mobile optimization completed');
       }
       
-      // Run optimization immediately and after content loads
+      // Run optimization
       optimizeForMobile();
       
       // Observer for dynamic content
-      const observer = new MutationObserver(() => {
-        optimizeForMobile();
-      });
+      const observer = new MutationObserver(optimizeForMobile);
+      observer.observe(document.body, { childList: true, subtree: true });
       
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true
-      });
-      
-      // Run after DOM is fully loaded
-      if (document.readyState === 'complete') {
-        optimizeForMobile();
-      } else {
-        document.addEventListener('DOMContentLoaded', optimizeForMobile);
-        window.addEventListener('load', optimizeForMobile);
-      }
-      
-      // Run periodically to catch any dynamically loaded content
-      setInterval(optimizeForMobile, 2000);
-      
-      // OneSignal integration
-      window.addEventListener('message', function(event) {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'ONESIGNAL_NOTIFICATION_PERMISSION') {
-            window.ReactNativeWebView.postMessage(JSON.stringify({
-              type: 'ONESIGNAL_PERMISSION_REQUEST'
-            }));
-          }
-        } catch (e) {
-          // Not a JSON message
-        }
-      });
-      
-      // Track article views for better notification targeting
-      const trackArticleView = () => {
-        const articleTitle = document.querySelector('h1.entry-title, .entry-title h1, h1')?.textContent;
-        const articleCategory = document.querySelector('.cat-links a, .category a')?.textContent;
+      // Page info tracking
+      function sendPageInfo() {
+        const title = document.querySelector('h1.entry-title, .entry-title h1, h1')?.textContent?.trim();
+        const category = document.querySelector('.cat-links a, .category a')?.textContent?.trim();
+        const isArticle = window.location.href.includes('/index.php/') && 
+                         window.location.href !== '${HOME_URL}';
         
-        if (articleTitle) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'PAGE_INFO',
+          title: title || 'THE CLIFF NEWS',
+          category: category || 'News',
+          url: window.location.href,
+          isArticle: isArticle
+        }));
+        
+        if (title && isArticle) {
           window.ReactNativeWebView.postMessage(JSON.stringify({
             type: 'ARTICLE_VIEW',
-            title: articleTitle.trim(),
-            category: articleCategory?.trim() || 'Uncategorized',
+            title: title,
+            category: category || 'Uncategorized',
             url: window.location.href
           }));
         }
-      };
+      }
       
-      // Track scroll events for header animation
+      // Send page info on load and navigation
+      if (document.readyState === 'complete') {
+        sendPageInfo();
+      } else {
+        window.addEventListener('load', sendPageInfo);
+      }
+      
+      // Track page changes
+      let lastUrl = window.location.href;
+      setInterval(() => {
+        if (window.location.href !== lastUrl) {
+          lastUrl = window.location.href;
+          setTimeout(sendPageInfo, 500);
+        }
+      }, 1000);
+      
+      // Scroll tracking
       let lastScrollY = 0;
       window.addEventListener('scroll', () => {
         const scrollY = window.pageYOffset;
@@ -181,11 +173,8 @@ export default function HomeScreen() {
         lastScrollY = scrollY;
       });
       
-      if (document.readyState === 'complete') {
-        trackArticleView();
-      } else {
-        window.addEventListener('load', trackArticleView);
-      }
+      // Run periodically
+      setInterval(optimizeForMobile, 3000);
       
     })();
     true;
@@ -193,14 +182,12 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (loadUrl) {
-      console.log('Loading URL from notification:', loadUrl);
       setCurrentUrl(loadUrl);
     }
   }, [loadUrl]);
 
   useEffect(() => {
     if (params.urlToLoad && params.urlToLoad !== currentUrl) {
-      console.log('Loading URL from params:', params.urlToLoad);
       setCurrentUrl(params.urlToLoad);
     }
   }, [params.urlToLoad]);
@@ -208,8 +195,7 @@ export default function HomeScreen() {
   useEffect(() => {
     const timer = setTimeout(() => {
       requestNotificationPermission();
-    }, 3000); // Increased delay for better UX
-
+    }, 3000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -237,6 +223,7 @@ export default function HomeScreen() {
 
   const onNavigationStateChange = (navState: WebViewNavigation) => {
     setCurrentUrl(navState.url);
+    detectPageType(navState.url, navState.title);
 
     if (Platform.OS !== 'web') {
       OneSignal.User.addTag('last_visited_page', navState.url);
@@ -248,8 +235,9 @@ export default function HomeScreen() {
       const data = JSON.parse(event.nativeEvent.data);
 
       switch (data.type) {
-        case 'ONESIGNAL_PERMISSION_REQUEST':
-          requestNotificationPermission();
+        case 'PAGE_INFO':
+          detectPageType(data.url, data.title);
+          setCurrentTitle(data.title);
           break;
 
         case 'ARTICLE_VIEW':
@@ -260,12 +248,15 @@ export default function HomeScreen() {
               last_article_timestamp: new Date().toISOString(),
               last_article_url: data.url || currentUrl,
             });
-            console.log('Article view tracked:', data.title);
           }
           break;
 
         case 'SCROLL_EVENT':
           scrollY.value = data.scrollY;
+          break;
+
+        case 'ONESIGNAL_PERMISSION_REQUEST':
+          requestNotificationPermission();
           break;
 
         default:
@@ -278,11 +269,10 @@ export default function HomeScreen() {
 
   const handleMenuPress = () => {
     setIsMenuVisible(true);
-    // You can implement a slide-out menu here
+    // Implement slide-out menu
   };
 
   const handleSearchPress = () => {
-    // Implement search functionality
     webViewRef.current?.postMessage(
       JSON.stringify({
         action: 'focusSearch',
@@ -291,7 +281,6 @@ export default function HomeScreen() {
   };
 
   const handleNotificationPress = () => {
-    // Show notification preferences or recent notifications
     Alert.alert(
       'Notifications',
       'Stay updated with the latest news from The Cliff News',
@@ -302,18 +291,15 @@ export default function HomeScreen() {
     );
   };
 
-  const handleSharePress = () => {
-    // Implement share functionality
-    if (Platform.OS !== 'web') {
-      import('react-native').then(({ Share }) => {
-        Share.share({
-          message:
-            'Check out The Cliff News - National Daily Bilingual Newspaper',
-          url: currentUrl,
-          title: 'The Cliff News',
-        });
-      });
+  const handleBackPress = () => {
+    if (webViewRef.current) {
+      webViewRef.current.goBack();
     }
+  };
+
+  const handleHomePress = () => {
+    setCurrentUrl(HOME_URL);
+    webViewRef.current?.reload();
   };
 
   if (!isConnected) {
@@ -323,12 +309,15 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <MobileAppHeader
-        title="THE CLIFF NEWS"
+        title={currentTitle}
+        showBackButton={isArticlePage}
+        showHomeButton={isArticlePage}
         onMenuPress={handleMenuPress}
         onSearchPress={handleSearchPress}
         onNotificationPress={handleNotificationPress}
-        onSharePress={handleSharePress}
         onRefreshPress={handleReload}
+        onBackPress={handleBackPress}
+        onHomePress={handleHomePress}
         scrollY={scrollY}
       />
 

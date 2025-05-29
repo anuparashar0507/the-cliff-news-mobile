@@ -3,13 +3,13 @@ import { StyleSheet, View, Share, Platform } from 'react-native';
 import { WebView, WebViewNavigation } from 'react-native-webview';
 import { useState, useRef, useCallback } from 'react';
 import { COLORS } from '@/constants/Theme';
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+// import {
+//   SafeAreaView,
+//   useSafeAreaInsets,
+// } from 'react-native-safe-area-context';
 import WebViewError from '@/components/WebViewError';
 import WebViewLoading from '@/components/WebViewLoading';
-import EPaperHeader from '@/components/EPaperHeader';
+import MobileAppHeader from '@/components/MobileAppHeader';
 
 const EPAPER_URL = 'https://thecliffnews.in/index.php/elementor-12046/';
 
@@ -18,48 +18,42 @@ export default function EPaperScreen() {
   const [hasError, setHasError] = useState(false);
   const [currentUrl, setCurrentUrl] = useState(EPAPER_URL);
   const webViewRef = useRef<WebView>(null);
-  const insets = useSafeAreaInsets();
 
-  // JavaScript to inject for handling potential fixed headers and hiding site header
   const injectedJavaScript = `
     (function() {
-      // Handle safe area
-      const topPadding = ${insets.top};
-      
-      // Find and hide the site header
-      function hideOriginalHeader() {
-        // Target the site header - update selectors based on your WordPress theme
-        const siteHeader = document.querySelector('header.site-header, #masthead, .main-header, #site-header');
-        if (siteHeader) {
-          siteHeader.style.display = 'none';
-        }
+      // Enhanced E-Paper optimization
+      function optimizeEPaper() {
+        const elementsToHide = [
+          'header.site-header', '#masthead', '.main-header',
+          '#wpadminbar', '.top-header', '#site-navigation'
+        ];
         
-        // Hide admin bar if present
-        const adminBar = document.querySelector('#wpadminbar');
-        if (adminBar) {
-          adminBar.style.display = 'none';
-        }
+        elementsToHide.forEach(selector => {
+          const element = document.querySelector(selector);
+          if (element) element.style.display = 'none';
+        });
         
-        // Adjust body padding/margin to compensate for hidden header
-        document.body.style.paddingTop = '0px';
-        document.body.style.marginTop = '0px';
+        // E-Paper specific styles
+        const epaperStyles = document.createElement('style');
+        epaperStyles.textContent = \`
+          body { padding-top: 0 !important; margin-top: 0 !important; }
+          .elementor-section { margin-top: 0 !important; }
+          .elementor-container { padding-top: 0 !important; }
+        \`;
+        document.head.appendChild(epaperStyles);
       }
       
-      // Run immediately and after any potential dynamic content loads
-      hideOriginalHeader();
+      optimizeEPaper();
       
-      // Also run after document fully loads
       if (document.readyState === 'complete') {
-        hideOriginalHeader();
+        optimizeEPaper();
       } else {
-        window.addEventListener('load', hideOriginalHeader);
+        window.addEventListener('load', optimizeEPaper);
       }
       
-      // Run periodically in case of delayed rendering
-      setTimeout(hideOriginalHeader, 500);
-      setTimeout(hideOriginalHeader, 1500);
+      setInterval(optimizeEPaper, 2000);
     })();
-    true; // Required
+    true;
   `;
 
   const handleLoadStart = () => {
@@ -101,11 +95,12 @@ export default function EPaperScreen() {
 
   return (
     <View style={styles.container}>
-      <EPaperHeader
+      <MobileAppHeader
         title="The Cliff E-Paper"
-        onRefresh={handleReload}
-        onShare={handleShare}
-        currentUrl={currentUrl}
+        showSearch={false}
+        showNotifications={false}
+        onRefreshPress={handleReload}
+        onSharePress={handleShare}
       />
 
       {hasError ? (
@@ -129,6 +124,8 @@ export default function EPaperScreen() {
             mediaPlaybackRequiresUserAction={Platform.OS !== 'android'}
             pullToRefreshEnabled={true}
             applicationNameForUserAgent="TheCliffNewsApp-EPaper/1.0"
+            showsVerticalScrollIndicator={false}
+            showsHorizontalScrollIndicator={false}
           />
           {isLoading && <WebViewLoading />}
         </>

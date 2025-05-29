@@ -1,5 +1,4 @@
-// components/MobileAppHeader.tsx (NEW COMPONENT)
-import React from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -7,13 +6,24 @@ import {
   TouchableOpacity,
   Platform,
   StatusBar,
+  Share,
 } from 'react-native';
 import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
+import { useRouter, usePathname } from 'expo-router';
 import { COLORS, TYPOGRAPHY } from '@/constants/Theme';
-import { Menu, Search, Bell, Share2, RefreshCw } from 'lucide-react-native';
+import {
+  Menu,
+  Search,
+  Bell,
+  Share2,
+  RefreshCw,
+  ArrowLeft,
+  Home,
+  X,
+} from 'lucide-react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -27,12 +37,17 @@ interface MobileAppHeaderProps {
   showNotifications?: boolean;
   showShare?: boolean;
   showRefresh?: boolean;
+  showBackButton?: boolean;
+  showHomeButton?: boolean;
   onMenuPress?: () => void;
   onSearchPress?: () => void;
   onNotificationPress?: () => void;
   onSharePress?: () => void;
   onRefreshPress?: () => void;
+  onBackPress?: () => void;
+  onHomePress?: () => void;
   scrollY?: Animated.SharedValue<number>;
+  customActions?: React.ReactNode;
 }
 
 export default function MobileAppHeader({
@@ -41,14 +56,91 @@ export default function MobileAppHeader({
   showNotifications = true,
   showShare = true,
   showRefresh = true,
+  showBackButton = false,
+  showHomeButton = false,
   onMenuPress,
   onSearchPress,
   onNotificationPress,
   onSharePress,
   onRefreshPress,
+  onBackPress,
+  onHomePress,
   scrollY,
+  customActions,
 }: MobileAppHeaderProps) {
-  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const pathname = usePathname();
+  const [isSearchVisible, setIsSearchVisible] = useState(false);
+
+  // Determine if we should show back/home buttons based on current route
+  const isMainTab = [
+    '/',
+    '/(tabs)',
+    '/(tabs)/epaper',
+    '/(tabs)/ebooks',
+    '/(tabs)/games',
+  ].includes(pathname);
+  const shouldShowBack = showBackButton || !isMainTab;
+  const shouldShowHome = showHomeButton || !isMainTab;
+
+  const handleBack = () => {
+    if (onBackPress) {
+      onBackPress();
+    } else {
+      router.back();
+    }
+  };
+
+  const handleHome = () => {
+    if (onHomePress) {
+      onHomePress();
+    } else {
+      router.push('/(tabs)');
+    }
+  };
+
+  const handleSearch = () => {
+    if (onSearchPress) {
+      onSearchPress();
+    } else {
+      setIsSearchVisible(!isSearchVisible);
+    }
+  };
+
+  const handleShare = async () => {
+    if (onSharePress) {
+      onSharePress();
+    } else {
+      try {
+        await Share.share({
+          message:
+            'Check out The Cliff News - National Daily Bilingual Newspaper',
+          url: 'https://thecliffnews.in/',
+          title: 'The Cliff News',
+        });
+      } catch (error) {
+        console.error('Error sharing:', error);
+      }
+    }
+  };
+
+  const handleNotifications = () => {
+    if (onNotificationPress) {
+      onNotificationPress();
+    }
+  };
+
+  const handleRefresh = () => {
+    if (onRefreshPress) {
+      onRefreshPress();
+    }
+  };
+
+  const handleMenu = () => {
+    if (onMenuPress) {
+      onMenuPress();
+    }
+  };
 
   // Animated header that changes on scroll
   const headerAnimatedStyle = useAnimatedStyle(() => {
@@ -77,13 +169,33 @@ export default function MobileAppHeader({
           <View style={styles.header}>
             {/* Left Section */}
             <View style={styles.leftSection}>
-              <TouchableOpacity
-                style={styles.iconButton}
-                onPress={onMenuPress}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Menu size={24} color={COLORS.white} />
-              </TouchableOpacity>
+              {shouldShowBack ? (
+                <TouchableOpacity
+                  style={styles.iconButton}
+                  onPress={handleBack}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <ArrowLeft size={24} color={COLORS.white} />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={styles.iconButton}
+                  onPress={handleMenu}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Menu size={24} color={COLORS.white} />
+                </TouchableOpacity>
+              )}
+
+              {shouldShowHome && (
+                <TouchableOpacity
+                  style={styles.iconButton}
+                  onPress={handleHome}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Home size={22} color={COLORS.white} />
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Center Section */}
@@ -98,35 +210,49 @@ export default function MobileAppHeader({
 
             {/* Right Section */}
             <View style={styles.rightSection}>
-              {showSearch && (
-                <TouchableOpacity
-                  style={styles.iconButton}
-                  onPress={onSearchPress}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Search size={20} color={COLORS.white} />
-                </TouchableOpacity>
-              )}
+              {customActions || (
+                <>
+                  {showSearch && (
+                    <TouchableOpacity
+                      style={styles.iconButton}
+                      onPress={handleSearch}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Search size={20} color={COLORS.white} />
+                    </TouchableOpacity>
+                  )}
 
-              {showNotifications && (
-                <TouchableOpacity
-                  style={[styles.iconButton, styles.notificationButton]}
-                  onPress={onNotificationPress}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Bell size={20} color={COLORS.white} />
-                  <View style={styles.notificationDot} />
-                </TouchableOpacity>
-              )}
+                  {showNotifications && (
+                    <TouchableOpacity
+                      style={[styles.iconButton, styles.notificationButton]}
+                      onPress={handleNotifications}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Bell size={20} color={COLORS.white} />
+                      <View style={styles.notificationDot} />
+                    </TouchableOpacity>
+                  )}
 
-              {showRefresh && (
-                <TouchableOpacity
-                  style={styles.iconButton}
-                  onPress={onRefreshPress}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <RefreshCw size={20} color={COLORS.white} />
-                </TouchableOpacity>
+                  {showRefresh && (
+                    <TouchableOpacity
+                      style={styles.iconButton}
+                      onPress={handleRefresh}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <RefreshCw size={20} color={COLORS.white} />
+                    </TouchableOpacity>
+                  )}
+
+                  {showShare && (
+                    <TouchableOpacity
+                      style={styles.iconButton}
+                      onPress={handleShare}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Share2 size={18} color={COLORS.white} />
+                    </TouchableOpacity>
+                  )}
+                </>
               )}
             </View>
           </View>
@@ -155,8 +281,9 @@ const styles = StyleSheet.create({
     minHeight: 60,
   },
   leftSection: {
-    width: 50,
-    alignItems: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: 80,
   },
   centerSection: {
     flex: 1,
@@ -173,7 +300,7 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    marginHorizontal: 4,
+    marginHorizontal: 2,
   },
   notificationButton: {
     position: 'relative',
@@ -191,14 +318,14 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontFamily: TYPOGRAPHY.heading.fontFamily,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     color: COLORS.white,
     textAlign: 'center',
   },
   headerSubtitle: {
     fontFamily: TYPOGRAPHY.body.fontFamily,
-    fontSize: 11,
+    fontSize: 10,
     color: COLORS.white,
     opacity: 0.8,
     textAlign: 'center',
