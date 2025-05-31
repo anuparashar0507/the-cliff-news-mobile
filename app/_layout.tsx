@@ -13,8 +13,24 @@ import {
 import { AppProvider } from '@/context/AppContext';
 import SplashScreenComponent from '@/components/splash';
 import { Platform } from 'react-native';
-import { OneSignal, LogLevel } from 'react-native-onesignal';
 import Constants from 'expo-constants';
+
+// FIXED: Import OneSignal with proper Expo Go detection
+let OneSignal: any = null;
+let LogLevel: any = null;
+
+// Check if we're in Expo Go or development build
+const isExpoGo = Constants.appOwnership === 'expo';
+
+if (!isExpoGo && Platform.OS !== 'web') {
+  try {
+    const onesignalModule = require('react-native-onesignal');
+    OneSignal = onesignalModule.OneSignal;
+    LogLevel = onesignalModule.LogLevel;
+  } catch (error) {
+    console.log('OneSignal module not available in Expo Go:', error);
+  }
+}
 
 // Prevent native splash screen from auto-hiding
 ExpoRouterSplashScreen.preventAutoHideAsync();
@@ -29,15 +45,24 @@ export default function RootLayout() {
 
   const [appIsReady, setAppIsReady] = useState(false);
 
-  // Initialize OneSignal on app startup
+  // Initialize OneSignal only if not in Expo Go
   useEffect(() => {
-    if (Platform.OS !== 'web') {
-      console.log('Starting OneSignal initialization in RootLayout');
+    if (!isExpoGo && Platform.OS !== 'web' && OneSignal) {
+      console.log('Starting OneSignal initialization in development build');
       initializeOneSignal();
+    } else {
+      console.log(
+        'Skipping OneSignal initialization (running in Expo Go or web)'
+      );
     }
   }, []);
 
   const initializeOneSignal = async () => {
+    if (!OneSignal || !LogLevel) {
+      console.log('OneSignal not available');
+      return;
+    }
+
     try {
       console.log('OneSignal initialization function called');
 
@@ -83,6 +108,7 @@ export default function RootLayout() {
         app_version: Constants.expoConfig?.version || '1.0.0',
         device_type: Platform.OS === 'ios' ? 'iOS' : 'Android',
         install_date: new Date().toISOString().split('T')[0],
+        build_type: isExpoGo ? 'expo_go' : 'development',
       });
       console.log('Added device info tags to OneSignal');
 
@@ -99,7 +125,9 @@ export default function RootLayout() {
       'RootLayout useEffect triggered. Fonts loaded:',
       fontsLoaded,
       'Font error:',
-      !!fontError
+      !!fontError,
+      'Running in:',
+      isExpoGo ? 'Expo Go' : 'Development Build'
     );
 
     async function prepareApp() {
@@ -109,8 +137,7 @@ export default function RootLayout() {
             'Fonts are ready or error occurred. Preparing to show main app.'
           );
 
-          // Artificial delay to ensure custom splash is visible for a moment (for debugging)
-          // Remove this for production if not desired.
+          // Artificial delay to ensure custom splash is visible for a moment
           await new Promise((resolve) => setTimeout(resolve, 1500)); // 1.5 seconds delay
 
           setAppIsReady(true);

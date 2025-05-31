@@ -9,8 +9,21 @@ import WebViewLoading from '@/components/WebViewLoading';
 import OfflineMessage from '@/components/OfflineMessage';
 import MobileAppHeader from '@/components/MobileAppHeader';
 import { useAppContext } from '@/context/AppContext';
-import { OneSignal } from 'react-native-onesignal';
 import Animated, { useSharedValue } from 'react-native-reanimated';
+import Constants from 'expo-constants';
+
+// FIXED: Check if we're in Expo Go
+const isExpoGo = Constants.appOwnership === 'expo';
+
+// Conditionally import OneSignal
+let OneSignal: any = null;
+if (!isExpoGo && Platform.OS !== 'web') {
+  try {
+    OneSignal = require('react-native-onesignal').OneSignal;
+  } catch (error) {
+    console.log('OneSignal not available in Expo Go');
+  }
+}
 
 const HOME_URL = 'https://thecliffnews.in/';
 
@@ -22,8 +35,12 @@ export default function HomeScreen() {
   const webViewRef = useRef<WebView>(null);
   const router = useRouter();
   const params = useLocalSearchParams<{ urlToLoad?: string }>();
-  const { requestNotificationPermission, loadUrl, isConnected } =
-    useAppContext();
+  const {
+    requestNotificationPermission,
+    loadUrl,
+    isConnected,
+    isExpoGo: contextIsExpoGo,
+  } = useAppContext();
   const [currentUrl, setCurrentUrl] = useState(
     params.urlToLoad || loadUrl || HOME_URL
   );
@@ -38,7 +55,7 @@ export default function HomeScreen() {
     setCurrentTitle(isArticle && title ? title : 'THE CLIFF NEWS');
   };
 
-  // FIXED: Removed problematic decelerationRate property
+  // FIXED: Simplified injected JavaScript without problematic properties
   const injectedJavaScript = `
     (function() {
       console.log('Enhanced Mobile WebView Script Loaded');
@@ -113,21 +130,23 @@ export default function HomeScreen() {
         const isArticle = window.location.href.includes('/index.php/') && 
                          window.location.href !== '${HOME_URL}';
         
-        window.ReactNativeWebView.postMessage(JSON.stringify({
-          type: 'PAGE_INFO',
-          title: title || 'THE CLIFF NEWS',
-          category: category || 'News',
-          url: window.location.href,
-          isArticle: isArticle
-        }));
-        
-        if (title && isArticle) {
+        if (window.ReactNativeWebView) {
           window.ReactNativeWebView.postMessage(JSON.stringify({
-            type: 'ARTICLE_VIEW',
-            title: title,
-            category: category || 'Uncategorized',
-            url: window.location.href
+            type: 'PAGE_INFO',
+            title: title || 'THE CLIFF NEWS',
+            category: category || 'News',
+            url: window.location.href,
+            isArticle: isArticle
           }));
+          
+          if (title && isArticle) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'ARTICLE_VIEW',
+              title: title,
+              category: category || 'Uncategorized',
+              url: window.location.href
+            }));
+          }
         }
       }
       
@@ -148,11 +167,13 @@ export default function HomeScreen() {
       let lastScrollY = 0;
       window.addEventListener('scroll', () => {
         const scrollY = window.pageYOffset;
-        window.ReactNativeWebView.postMessage(JSON.stringify({
-          type: 'SCROLL_EVENT',
-          scrollY: scrollY,
-          direction: scrollY > lastScrollY ? 'down' : 'up'
-        }));
+        if (window.ReactNativeWebView) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'SCROLL_EVENT',
+            scrollY: scrollY,
+            direction: scrollY > lastScrollY ? 'down' : 'up'
+          }));
+        }
         lastScrollY = scrollY;
       });
       
@@ -207,13 +228,13 @@ export default function HomeScreen() {
     setCurrentUrl(navState.url);
     detectPageType(navState.url, navState.title);
 
-    // FIXED: Added proper error handling for OneSignal
-    try {
-      if (Platform.OS !== 'web') {
+    // FIXED: Only use OneSignal if available (not in Expo Go)
+    if (OneSignal && !isExpoGo) {
+      try {
         OneSignal.User.addTag('last_visited_page', navState.url);
+      } catch (error) {
+        console.log('OneSignal error:', error);
       }
-    } catch (error) {
-      console.log('OneSignal not available:', error);
     }
   };
 
@@ -228,17 +249,17 @@ export default function HomeScreen() {
           break;
 
         case 'ARTICLE_VIEW':
-          try {
-            if (Platform.OS !== 'web' && data.title) {
+          if (OneSignal && !isExpoGo && data.title) {
+            try {
               OneSignal.User.addTags({
                 last_article_title: data.title,
                 last_article_category: data.category || 'Uncategorized',
                 last_article_timestamp: new Date().toISOString(),
                 last_article_url: data.url || currentUrl,
               });
+            } catch (error) {
+              console.log('OneSignal error:', error);
             }
-          } catch (error) {
-            console.log('OneSignal not available:', error);
           }
           break;
 
@@ -254,7 +275,7 @@ export default function HomeScreen() {
           break;
       }
     } catch (error) {
-      // Not a JSON message
+      // Not a JSON message, ignore
     }
   };
 
@@ -302,16 +323,16 @@ export default function HomeScreen() {
             javaScriptEnabled={true}
             domStorageEnabled={true}
             sharedCookiesEnabled={true}
-            // allowsInlineMediaPlaybook={true}
+            allowsInlineMediaPlayback={true}
             mediaPlaybackRequiresUserAction={Platform.OS !== 'android'}
             pullToRefreshEnabled={true}
             applicationNameForUserAgent="TheCliffNewsApp/1.0"
             showsVerticalScrollIndicator={false}
             showsHorizontalScrollIndicator={false}
-            // FIXED: Removed problematic decelerationRate="normal"
             bounces={true}
             scrollEnabled={true}
             nestedScrollEnabled={true}
+            // FIXED: Removed all problematic properties like decelerationRate
           />
           {isLoading && <WebViewLoading />}
         </>

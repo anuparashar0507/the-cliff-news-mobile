@@ -6,9 +6,29 @@ import React, {
   ReactNode,
 } from 'react';
 import { Platform, Alert } from 'react-native';
-import { OneSignal, LogLevel } from 'react-native-onesignal';
-import Constants from 'expo-constants';
 import NetInfo from '@react-native-community/netinfo';
+import Constants from 'expo-constants';
+
+// FIXED: Proper Expo Go detection and OneSignal handling
+const isExpoGo = Constants.appOwnership === 'expo';
+
+let OneSignal: any = null;
+let LogLevel: any = null;
+
+// Only import OneSignal in development builds, not in Expo Go
+if (!isExpoGo && Platform.OS !== 'web') {
+  try {
+    const onesignalModule = require('react-native-onesignal');
+    OneSignal = onesignalModule.OneSignal;
+    LogLevel = onesignalModule.LogLevel;
+    console.log('OneSignal module loaded successfully');
+  } catch (error: any) {
+    console.log(
+      'OneSignal module not available (expected in Expo Go):',
+      error.message
+    );
+  }
+}
 
 type AppContextType = {
   isOnline: boolean;
@@ -16,7 +36,8 @@ type AppContextType = {
   reloadTrigger: number;
   requestNotificationPermission: () => void;
   loadUrl: string | null;
-  isConnected: boolean; // FIXED: Added missing property
+  isConnected: boolean;
+  isExpoGo: boolean; // Added for debugging
 };
 
 const AppContext = createContext<AppContextType>({
@@ -25,7 +46,8 @@ const AppContext = createContext<AppContextType>({
   reloadTrigger: 0,
   requestNotificationPermission: () => {},
   loadUrl: null,
-  isConnected: true, // FIXED: Added missing property
+  isConnected: true,
+  isExpoGo: false,
 });
 
 export const useAppContext = () => useContext(AppContext);
@@ -39,6 +61,11 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   const [isConnected, setIsConnected] = useState(true);
   const [reloadTrigger, setReloadTrigger] = useState(0);
   const [loadUrl, setLoadUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    console.log(`Running in: ${isExpoGo ? 'Expo Go' : 'Development Build'}`);
+    console.log(`OneSignal available: ${!!OneSignal}`);
+  }, []);
 
   useEffect(() => {
     // Enhanced network connectivity monitoring
@@ -65,6 +92,21 @@ export const AppProvider = ({ children }: AppProviderProps) => {
 
   const requestNotificationPermission = async () => {
     if (Platform.OS === 'web') return;
+
+    if (isExpoGo) {
+      console.log('Notification permission request skipped in Expo Go');
+      Alert.alert(
+        'Development Mode',
+        'Push notifications are only available in the production app. This feature will work when you install the app from the App Store.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    if (!OneSignal) {
+      console.log('OneSignal not available');
+      return;
+    }
 
     try {
       const hasPermission = await OneSignal.Notifications.hasPermission;
@@ -98,19 +140,28 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   };
 
   useEffect(() => {
-    if (Platform.OS !== 'web') {
+    if (!isExpoGo && Platform.OS !== 'web' && OneSignal) {
       initializeOneSignal();
       setupNotificationListeners();
+    } else {
+      console.log(
+        'Skipping OneSignal setup - not available in current environment'
+      );
     }
 
     return () => {
-      if (Platform.OS !== 'web') {
+      if (!isExpoGo && Platform.OS !== 'web' && OneSignal) {
         removeNotificationListeners();
       }
     };
   }, []);
 
   const initializeOneSignal = async () => {
+    if (!OneSignal || !LogLevel) {
+      console.log('OneSignal not available, skipping initialization');
+      return;
+    }
+
     try {
       console.log('Initializing OneSignal...');
 
@@ -144,7 +195,8 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         device_type: Platform.OS === 'ios' ? 'iOS' : 'Android',
         install_date: new Date().toISOString().split('T')[0],
         user_type: 'mobile_app_user',
-        language: 'hindi_english', // Based on your bilingual newspaper
+        language: 'hindi_english',
+        build_type: 'development',
       });
 
       console.log('OneSignal initialization completed successfully');
@@ -158,19 +210,28 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   };
 
   const handleForegroundNotification = (event: any) => {
+    if (!OneSignal) return;
+
     console.log('Notification received in foreground:', event);
 
     // Extract URL from notification data
     const notificationData = event.notification.additionalData;
     if (notificationData?.url) {
       console.log('Notification contains URL:', notificationData.url);
+      setLoadUrl(notificationData.url);
     }
 
     // Display the notification even in foreground
-    event.notification.display();
+    try {
+      event.notification.display();
+    } catch (error) {
+      console.log('Error displaying notification:', error);
+    }
   };
 
   const handleNotificationClick = (event: any) => {
+    if (!OneSignal) return;
+
     console.log('Notification clicked:', event);
 
     const customData = event.notification.additionalData;
@@ -181,35 +242,54 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     }
 
     // Track notification interaction
-    OneSignal.User.addTags({
-      last_notification_clicked: new Date().toISOString(),
-      last_notification_title: event.notification.title || '',
-    });
+    try {
+      OneSignal.User.addTags({
+        last_notification_clicked: new Date().toISOString(),
+        last_notification_title: event.notification.title || '',
+      });
+    } catch (error) {
+      console.log('Error tracking notification interaction:', error);
+    }
   };
 
   const setupNotificationListeners = () => {
+    if (!OneSignal) return;
+
     console.log('Setting up OneSignal notification listeners');
 
-    OneSignal.Notifications.addEventListener(
-      'foregroundWillDisplay',
-      handleForegroundNotification
-    );
+    try {
+      OneSignal.Notifications.addEventListener(
+        'foregroundWillDisplay',
+        handleForegroundNotification
+      );
 
-    OneSignal.Notifications.addEventListener('click', handleNotificationClick);
+      OneSignal.Notifications.addEventListener(
+        'click',
+        handleNotificationClick
+      );
+    } catch (error) {
+      console.log('Error setting up notification listeners:', error);
+    }
   };
 
   const removeNotificationListeners = () => {
+    if (!OneSignal) return;
+
     console.log('Removing OneSignal notification listeners');
 
-    OneSignal.Notifications.removeEventListener(
-      'foregroundWillDisplay',
-      handleForegroundNotification
-    );
+    try {
+      OneSignal.Notifications.removeEventListener(
+        'foregroundWillDisplay',
+        handleForegroundNotification
+      );
 
-    OneSignal.Notifications.removeEventListener(
-      'click',
-      handleNotificationClick
-    );
+      OneSignal.Notifications.removeEventListener(
+        'click',
+        handleNotificationClick
+      );
+    } catch (error) {
+      console.log('Error removing notification listeners:', error);
+    }
   };
 
   return (
@@ -221,6 +301,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         requestNotificationPermission,
         loadUrl,
         isConnected,
+        isExpoGo,
       }}
     >
       {children}
