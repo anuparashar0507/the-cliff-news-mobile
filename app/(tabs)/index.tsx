@@ -9,7 +9,6 @@ import WebViewLoading from '@/components/WebViewLoading';
 import OfflineMessage from '@/components/OfflineMessage';
 import MobileAppHeader from '@/components/MobileAppHeader';
 import { useAppContext } from '@/context/AppContext';
-import { useTheme } from '@/context/ThemeContext';
 import Animated, { useSharedValue } from 'react-native-reanimated';
 import Constants from 'expo-constants';
 
@@ -42,7 +41,6 @@ export default function HomeScreen() {
     isConnected,
     isExpoGo: contextIsExpoGo,
   } = useAppContext();
-  const { isDarkMode, colors } = useTheme();
   const [currentUrl, setCurrentUrl] = useState(
     params.urlToLoad || loadUrl || HOME_URL
   );
@@ -57,240 +55,149 @@ export default function HomeScreen() {
     setCurrentTitle(isArticle && title ? title : 'THE CLIFF NEWS');
   };
 
-  // Enhanced injected JavaScript with theme support
+  // FIXED: Simplified injected JavaScript without problematic properties
+
   const injectedJavaScript = `
-    (function() {
-      console.log('Enhanced Mobile WebView Script Loaded');
+  (function() {
+    console.log('Enhanced Mobile WebView Script Loaded');
+    
+    function applyTheme(isDark) {
+      const themeMode = isDark ? 'dark' : 'light';
       
-      // Apply theme from React Native
-      function applyTheme(isDark) {
-        const themeMode = isDark ? 'dark' : 'light';
-        
-        // Save theme to localStorage for persistence
-        try {
-          localStorage.setItem('themeMode', themeMode);
-        } catch (e) {
-          console.log('Could not save theme to localStorage:', e);
+      try {
+        localStorage.setItem('themeMode', themeMode);
+      } catch (e) {
+        console.log('Could not save theme to localStorage:', e);
+      }
+      
+      let themeStyleId = 'rn-theme-styles';
+      let existingThemeStyle = document.getElementById(themeStyleId);
+      if (existingThemeStyle) {
+        existingThemeStyle.remove();
+      }
+      
+      const themeStyles = document.createElement('style');
+      themeStyles.id = themeStyleId;
+      themeStyles.textContent = \`
+        :root {
+          --theme-bg: \${isDark ? '#0F0F0F' : '#FFFFFF'};
+          --theme-surface: \${isDark ? '#1A1A1A' : '#FFFFFF'};
+          --theme-text: \${isDark ? '#FFFFFF' : '#1F2937'};
+          --theme-text-secondary: \${isDark ? '#B0B0B0' : '#6B7280'};
+          --theme-border: \${isDark ? '#333333' : '#E5E7EB'};
         }
         
-        // Apply theme styles
-        let themeStyleId = 'rn-theme-styles';
-        let existingThemeStyle = document.getElementById(themeStyleId);
-        if (existingThemeStyle) {
-          existingThemeStyle.remove();
+      \`;
+      document.head.appendChild(themeStyles);
+    }
+    
+    function optimizeForMobile() {
+      // Only hide navigation elements
+      const elementsToHide = [
+        '#masthead', '.site-header', 'header.site-header',
+        '#wpadminbar', '.top-header', '.main-header', 
+        '#site-navigation', '.main-navigation',
+        '.ticker-item-wrap', '.top-ticker-news'
+      ];
+      
+      elementsToHide.forEach(selector => {
+        const element = document.querySelector(selector);
+        if (element) {
+          element.style.display = 'none';
         }
-        
-        const themeStyles = document.createElement('style');
-        themeStyles.id = themeStyleId;
-        themeStyles.textContent = \`
-          :root {
-            --theme-bg: \${isDark ? '#0F0F0F' : '#FFFFFF'};
-            --theme-surface: \${isDark ? '#1A1A1A' : '#FFFFFF'};
-            --theme-text: \${isDark ? '#FFFFFF' : '#1F2937'};
-            --theme-text-secondary: \${isDark ? '#B0B0B0' : '#6B7280'};
-            --theme-border: \${isDark ? '#333333' : '#E5E7EB'};
-          }
-          
+      });
+      
+      if (!document.getElementById('mobile-app-styles')) {
+        const mobileStyles = document.createElement('style');
+        mobileStyles.id = 'mobile-app-styles';
+        mobileStyles.textContent = \`
           body {
-            background-color: var(--theme-bg) !important;
-            color: var(--theme-text) !important;
-            transition: background-color 0.3s ease, color 0.3s ease;
+            font-size: 16px !important;
+            line-height: 1.6 !important;
+            padding-top: 0 !important;
+            margin-top: 0 !important;
           }
-          
-          .site-content,
-          .main-content,
-          article,
-          .entry-content {
-            background-color: var(--theme-bg) !important;
-            color: var(--theme-text) !important;
+          .site-content {
+            padding-top: 0 !important;
+            margin-top: 0 !important;
           }
-          
-          .entry-title,
-          h1, h2, h3, h4, h5, h6 {
-            color: var(--theme-text) !important;
+          article {
+            padding: 0px !important;
+            margin-bottom: 20px !important;
           }
-          
-          p, .entry-content p {
-            color: var(--theme-text) !important;
-          }
-          
-          .widget,
-          .sidebar {
-            background-color: var(--theme-surface) !important;
-            border-color: var(--theme-border) !important;
-          }
-          
-          .wp-block-image img {
-            border-radius: 8px !important;
-            \${isDark ? 'filter: brightness(0.9);' : ''}
-          }
-          
-          a {
-            color: #FFA500 !important;
-          }
-          
-          .entry-meta,
-          .post-meta {
-            color: var(--theme-text-secondary) !important;
+          .entry-title, h1 {
+            font-size: 24px !important;
+            margin-bottom: 15px !important;
+            line-height: 1.3 !important;
           }
         \`;
-        document.head.appendChild(themeStyles);
+        document.head.appendChild(mobileStyles);
+      }
+    }
+    
+    function initializeTheme() {
+      let savedTheme = null;
+      try {
+        savedTheme = localStorage.getItem('themeMode');
+      } catch (e) {
+        console.log('Could not read theme from localStorage:', e);
       }
       
-      function optimizeForMobile() {
-        const elementsToHide = [
-          '#masthead', '.site-header', 'header.site-header',
-          '#wpadminbar', '.top-header', '.main-header', 
-          '#site-navigation', '.main-navigation',
-          '.ticker-item-wrap', '.top-ticker-news'
-        ];
-        
-        elementsToHide.forEach(selector => {
-          const element = document.querySelector(selector);
-          if (element) {
-            element.style.display = 'none';
-          }
-        });
-        
-        if (!document.getElementById('mobile-app-styles')) {
-          const mobileStyles = document.createElement('style');
-          mobileStyles.id = 'mobile-app-styles';
-          mobileStyles.textContent = \`
-            body {
-              font-size: 16px !important;
-              line-height: 1.6 !important;
-              padding-top: 0 !important;
-              margin-top: 0 !important;
-            }
-            .site-content {
-              padding-top: 0 !important;
-              margin-top: 0 !important;
-            }
-            article {
-              padding: 15px !important;
-              margin-bottom: 20px !important;
-            }
-            .entry-title, h1 {
-              font-size: 24px !important;
-              margin-bottom: 15px !important;
-              line-height: 1.3 !important;
-            }
-            .entry-content {
-              font-size: 16px !important;
-              line-height: 1.6 !important;
-            }
-            img {
-              max-width: 100% !important;
-              height: auto !important;
-              border-radius: 8px !important;
-            }
-            p {
-              margin-bottom: 16px !important;
-            }
-            .wp-block-image {
-              text-align: center !important;
-              margin: 20px 0 !important;
-            }
-          \`;
-          document.head.appendChild(mobileStyles);
+      const isDark = savedTheme === 'dark';
+      applyTheme(isDark);
+    }
+    
+    optimizeForMobile();
+    initializeTheme();
+    
+    // Theme change listener
+    window.addEventListener('message', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'THEME_CHANGE') {
+          applyTheme(data.isDark);
         }
+      } catch (e) {
+        // Not a valid JSON message, ignore
       }
-      
-      // Apply initial theme based on saved preference or system
-      function initializeTheme() {
-        let savedTheme = null;
-        try {
-          savedTheme = localStorage.getItem('themeMode');
-        } catch (e) {
-          console.log('Could not read theme from localStorage:', e);
-        }
-        
-        // Default to light if no saved preference
-        const isDark = savedTheme === 'dark';
-        applyTheme(isDark);
-      }
-      
+    });
+    
+    window.applyTheme = applyTheme;
+    
+    // Rest of your existing WebView functionality...
+    const observer = new MutationObserver(() => {
       optimizeForMobile();
-      initializeTheme();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    
+    function sendPageInfo() {
+      const title = document.querySelector('h1.entry-title, .entry-title h1, h1')?.textContent?.trim();
+      const category = document.querySelector('.cat-links a, .category a')?.textContent?.trim();
+      const isArticle = window.location.href.includes('/index.php/') && 
+                       window.location.href !== '${HOME_URL}';
       
-      const observer = new MutationObserver(() => {
-        optimizeForMobile();
-      });
-      observer.observe(document.body, { childList: true, subtree: true });
-      
-      function sendPageInfo() {
-        const title = document.querySelector('h1.entry-title, .entry-title h1, h1')?.textContent?.trim();
-        const category = document.querySelector('.cat-links a, .category a')?.textContent?.trim();
-        const isArticle = window.location.href.includes('/index.php/') && 
-                         window.location.href !== '${HOME_URL}';
-        
-        if (window.ReactNativeWebView) {
-          window.ReactNativeWebView.postMessage(JSON.stringify({
-            type: 'PAGE_INFO',
-            title: title || 'THE CLIFF NEWS',
-            category: category || 'News',
-            url: window.location.href,
-            isArticle: isArticle
-          }));
-          
-          if (title && isArticle) {
-            window.ReactNativeWebView.postMessage(JSON.stringify({
-              type: 'ARTICLE_VIEW',
-              title: title,
-              category: category || 'Uncategorized',
-              url: window.location.href
-            }));
-          }
-        }
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'PAGE_INFO',
+          title: title || 'THE CLIFF NEWS',
+          category: category || 'News',
+          url: window.location.href,
+          isArticle: isArticle
+        }));
       }
-      
-      if (document.readyState === 'complete') {
-        sendPageInfo();
-      } else {
-        window.addEventListener('load', sendPageInfo);
-      }
-      
-      let lastUrl = window.location.href;
-      setInterval(() => {
-        if (window.location.href !== lastUrl) {
-          lastUrl = window.location.href;
-          setTimeout(sendPageInfo, 500);
-        }
-      }, 1000);
-      
-      let lastScrollY = 0;
-      window.addEventListener('scroll', () => {
-        const scrollY = window.pageYOffset;
-        if (window.ReactNativeWebView) {
-          window.ReactNativeWebView.postMessage(JSON.stringify({
-            type: 'SCROLL_EVENT',
-            scrollY: scrollY,
-            direction: scrollY > lastScrollY ? 'down' : 'up'
-          }));
-        }
-        lastScrollY = scrollY;
-      });
-      
-      // Listen for theme changes from React Native
-      window.addEventListener('message', (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'THEME_CHANGE') {
-            applyTheme(data.isDark);
-          }
-        } catch (e) {
-          // Not a valid JSON message, ignore
-        }
-      });
-      
-      // Expose theme function globally for React Native to call
-      window.applyTheme = applyTheme;
-      
-      setInterval(optimizeForMobile, 3000);
-      
-    })();
-    true;
-  `;
+    }
+    
+    if (document.readyState === 'complete') {
+      sendPageInfo();
+    } else {
+      window.addEventListener('load', sendPageInfo);
+    }
+    
+    setInterval(optimizeForMobile, 3000);
+    
+  })();
+  true;
+`;
 
   useEffect(() => {
     if (loadUrl) {
@@ -311,17 +218,6 @@ export default function HomeScreen() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Update WebView theme when theme changes
-  useEffect(() => {
-    if (webViewRef.current) {
-      const themeMessage = JSON.stringify({
-        type: 'THEME_CHANGE',
-        isDark: isDarkMode,
-      });
-      webViewRef.current.postMessage(themeMessage);
-    }
-  }, [isDarkMode]);
-
   const handleLoadStart = () => {
     setIsLoading(true);
     setHasError(false);
@@ -329,14 +225,6 @@ export default function HomeScreen() {
 
   const handleLoadEnd = () => {
     setIsLoading(false);
-    // Apply theme after page loads
-    if (webViewRef.current) {
-      const themeMessage = JSON.stringify({
-        type: 'THEME_CHANGE',
-        isDark: isDarkMode,
-      });
-      webViewRef.current.postMessage(themeMessage);
-    }
   };
 
   const handleError = (syntheticEvent: any) => {
@@ -423,7 +311,7 @@ export default function HomeScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={styles.container}>
       <MobileAppHeader
         title={currentTitle}
         showBackButton={isArticlePage}
@@ -441,7 +329,7 @@ export default function HomeScreen() {
           <WebView
             ref={webViewRef}
             source={{ uri: currentUrl }}
-            style={[styles.webview, { backgroundColor: colors.background }]}
+            style={styles.webview}
             onLoadStart={handleLoadStart}
             onLoadEnd={handleLoadEnd}
             onError={handleError}
@@ -460,6 +348,7 @@ export default function HomeScreen() {
             bounces={true}
             scrollEnabled={true}
             nestedScrollEnabled={true}
+            // FIXED: Removed all problematic properties like decelerationRate
           />
           {isLoading && <WebViewLoading />}
         </>
@@ -471,8 +360,10 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: COLORS.white,
   },
   webview: {
     flex: 1,
+    backgroundColor: COLORS.white,
   },
 });

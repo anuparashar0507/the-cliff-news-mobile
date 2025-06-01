@@ -8,12 +8,27 @@ module.exports = {
     scheme: 'thecliffnews',
     userInterfaceStyle: 'automatic',
     assetBundlePatterns: ['**/*'],
+    splash: {
+      image: './assets/images/splash.png',
+      resizeMode: 'contain',
+      backgroundColor: '#ffffff',
+    },
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.thecliff.news',
       infoPlist: {
         UIBackgroundModes: ['remote-notification'],
         ITSAppUsesNonExemptEncryption: false,
+        NSAppTransportSecurity: {
+          NSAllowsArbitraryLoads: true,
+          NSExceptionDomains: {
+            'thecliffnews.in': {
+              NSExceptionAllowsInsecureHTTPLoads: true,
+              NSExceptionMinimumTLSVersion: '1.0',
+              NSIncludesSubdomains: true,
+            },
+          },
+        },
       },
       entitlements: {
         'aps-environment': 'development',
@@ -28,6 +43,13 @@ module.exports = {
         backgroundColor: '#FFA500',
       },
       package: 'com.thecliff.news',
+      versionCode: 1,
+      permissions: [
+        'INTERNET',
+        'VIBRATE',
+        'RECEIVE_BOOT_COMPLETED',
+        'WAKE_LOCK',
+      ],
     },
     web: {
       bundler: 'metro',
@@ -44,6 +66,11 @@ module.exports = {
         {
           ios: {
             deploymentTarget: '15.1',
+          },
+          android: {
+            compileSdkVersion: 34,
+            targetSdkVersion: 34,
+            minSdkVersion: 21,
           },
         },
       ],

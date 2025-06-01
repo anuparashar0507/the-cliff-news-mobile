@@ -631,7 +631,7 @@ export default function MobileAppHeader({
 
 const styles = StyleSheet.create({
   headerContainer: {
-    shadowColor: COLORS.black,
+    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 4,
     zIndex: 1000,
@@ -644,6 +644,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     minHeight: 60,
+    borderBottomColor: COLORS.primary,
+    borderBottomWidth: 1,
   },
   leftSection: {
     flexDirection: 'row',

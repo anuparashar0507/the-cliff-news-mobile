@@ -1,4 +1,3 @@
-// context/ThemeContext.tsx
 import React, {
   createContext,
   useContext,
@@ -6,7 +5,7 @@ import React, {
   useEffect,
   ReactNode,
 } from 'react';
-import { useColorScheme } from 'react-native';
+import { useColorScheme, Appearance } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS, DARK_COLORS, getThemeColors } from '@/constants/Theme';
 
@@ -48,24 +47,30 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const systemColorScheme = useColorScheme();
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
   const [isLoaded, setIsLoaded] = useState(false);
+  const [systemTheme, setSystemTheme] = useState(systemColorScheme);
 
-  // Calculate if dark mode should be active
+  // FIXED: Better dark mode calculation
   const isDarkMode =
-    themeMode === 'dark' ||
-    (themeMode === 'system' && systemColorScheme === 'dark');
+    themeMode === 'dark' || (themeMode === 'system' && systemTheme === 'dark');
 
-  // Load saved theme preference on app start
   useEffect(() => {
     loadThemePreference();
   }, []);
 
-  // Listen to system theme changes when in system mode
+  // FIXED: Better system theme change handling
   useEffect(() => {
-    if (isLoaded && themeMode === 'system') {
-      // System theme changed, no need to save anything
-      console.log('System theme changed to:', systemColorScheme);
-    }
-  }, [systemColorScheme, themeMode, isLoaded]);
+    const subscription = Appearance.addChangeListener(({ colorScheme }) => {
+      console.log('System theme changed to:', colorScheme);
+      setSystemTheme(colorScheme);
+    });
+
+    return () => subscription?.remove();
+  }, []);
+
+  // FIXED: Update system theme when it changes
+  useEffect(() => {
+    setSystemTheme(systemColorScheme);
+  }, [systemColorScheme]);
 
   const loadThemePreference = async () => {
     try {
@@ -76,12 +81,10 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       ) {
         setThemeModeState(savedThemeMode as ThemeMode);
       } else {
-        // No saved preference, default to system
         setThemeModeState('system');
       }
     } catch (error) {
       console.error('Error loading theme preference:', error);
-      // Fallback to system theme
       setThemeModeState('system');
     } finally {
       setIsLoaded(true);
@@ -108,7 +111,6 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     setThemeMode(newMode);
   };
 
-  // Get theme-appropriate colors
   const colors = getThemeColors(isDarkMode);
 
   const value: ThemeContextType = {
@@ -120,7 +122,6 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     isLoaded,
   };
 
-  // Don't render until theme is loaded to prevent flash
   if (!isLoaded) {
     return null;
   }

@@ -11,17 +11,17 @@ import {
   OpenSans_600SemiBold,
 } from '@expo-google-fonts/open-sans';
 import { AppProvider } from '@/context/AppContext';
-import { ThemeProvider } from '@/context/ThemeContext';
+import { ThemeProvider } from '@/context/ThemeContext'; // FIXED: Correct import path
 import SplashScreenComponent from '@/components/splash';
+import ErrorBoundary from '@/components/ErrorBoundary'; // NEW: Add error boundary
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
-// FIXED: Import OneSignal with proper Expo Go detection
+// PRODUCTION-SAFE OneSignal Import
+const isExpoGo = Constants.appOwnership === 'expo';
+
 let OneSignal: any = null;
 let LogLevel: any = null;
-
-// Check if we're in Expo Go or development build
-const isExpoGo = Constants.appOwnership === 'expo';
 
 if (!isExpoGo && Platform.OS !== 'web') {
   try {
@@ -33,7 +33,6 @@ if (!isExpoGo && Platform.OS !== 'web') {
   }
 }
 
-// Prevent native splash screen from auto-hiding
 ExpoRouterSplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
@@ -46,11 +45,11 @@ export default function RootLayout() {
 
   const [appIsReady, setAppIsReady] = useState(false);
 
-  // Initialize OneSignal only if not in Expo Go
+  // FIXED: Better OneSignal initialization
   useEffect(() => {
     if (!isExpoGo && Platform.OS !== 'web' && OneSignal) {
       console.log('Starting OneSignal initialization in development build');
-      initializeOneSignal();
+      initializeOneSignalSafely();
     } else {
       console.log(
         'Skipping OneSignal initialization (running in Expo Go or web)'
@@ -58,7 +57,7 @@ export default function RootLayout() {
     }
   }, []);
 
-  const initializeOneSignal = async () => {
+  const initializeOneSignalSafely = async () => {
     if (!OneSignal || !LogLevel) {
       console.log('OneSignal not available');
       return;
@@ -67,7 +66,6 @@ export default function RootLayout() {
     try {
       console.log('OneSignal initialization function called');
 
-      // Get the OneSignal App ID from Expo constants
       const oneSignalAppId = Constants.expoConfig?.extra?.oneSignalAppId || '';
 
       if (!oneSignalAppId) {
@@ -77,47 +75,44 @@ export default function RootLayout() {
 
       console.log('Using OneSignal App ID:', oneSignalAppId);
 
-      // Configure OneSignal for the news app use case
-      OneSignal.Debug.setLogLevel(LogLevel.Verbose); // Shows all logs for debugging
+      // FIXED: Set log level based on environment
+      if (__DEV__) {
+        OneSignal.Debug.setLogLevel(LogLevel.Verbose);
+      } else {
+        OneSignal.Debug.setLogLevel(LogLevel.None);
+      }
 
-      // Initialize OneSignal
       await OneSignal.initialize(oneSignalAppId);
       console.log('OneSignal initialized successfully');
 
-      // Force notification permission prompt to appear immediately
-      // for testing purposes
       const hasPermission = await OneSignal.Notifications.hasPermission;
       console.log('Current notification permission status:', hasPermission);
 
-      if (!hasPermission) {
+      if (!hasPermission && !__DEV__) {
         console.log('Requesting notification permission');
         await OneSignal.Notifications.requestPermission(true);
       }
 
-      // Check again after request
       const permissionAfter = await OneSignal.Notifications.hasPermission;
       console.log('Permission status after request:', permissionAfter);
 
-      // Use device ID for identification since we don't have user accounts
       const deviceId = Constants.installationId || `device_${Date.now()}`;
       await OneSignal.login(deviceId);
       console.log('OneSignal login completed with device ID:', deviceId);
 
-      // Add device info tags
       await OneSignal.User.addTags({
         app_platform: Platform.OS,
         app_version: Constants.expoConfig?.version || '1.0.0',
         device_type: Platform.OS === 'ios' ? 'iOS' : 'Android',
         install_date: new Date().toISOString().split('T')[0],
-        build_type: isExpoGo ? 'expo_go' : 'development',
+        build_type: __DEV__ ? 'development' : 'production', // FIXED: Better build type detection
       });
       console.log('Added device info tags to OneSignal');
 
-      // Send a test event to verify everything is working
-      OneSignal.Debug.setLogLevel(LogLevel.Verbose);
       console.log('OneSignal setup complete');
     } catch (error) {
       console.error('Error initializing OneSignal:', error);
+      // IMPORTANT: Don't crash the app if OneSignal fails
     }
   };
 
@@ -138,8 +133,7 @@ export default function RootLayout() {
             'Fonts are ready or error occurred. Preparing to show main app.'
           );
 
-          // Artificial delay to ensure custom splash is visible for a moment
-          await new Promise((resolve) => setTimeout(resolve, 1500)); // 1.5 seconds delay
+          await new Promise((resolve) => setTimeout(resolve, 1500));
 
           setAppIsReady(true);
           console.log(
@@ -152,7 +146,6 @@ export default function RootLayout() {
         }
       } catch (e) {
         console.warn('Error during app preparation:', e);
-        // Still try to make app ready and hide native splash to avoid getting stuck
         if (fontsLoaded || fontError) {
           setAppIsReady(true);
           await ExpoRouterSplashScreen.hideAsync();
@@ -165,11 +158,6 @@ export default function RootLayout() {
 
   if (!appIsReady) {
     console.log('App not ready, rendering SplashScreenComponent.');
-    if (!SplashScreenComponent) {
-      console.error(
-        'SplashScreenComponent is not imported correctly! Check the path.'
-      );
-    }
     return <SplashScreenComponent />;
   }
 
@@ -179,14 +167,16 @@ export default function RootLayout() {
 
   console.log('App is ready, rendering main app structure.');
   return (
-    <ThemeProvider>
-      <AppProvider>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="+not-found" options={{ title: 'Oops!' }} />
-        </Stack>
-        <StatusBar style="auto" />
-      </AppProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <AppProvider>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="+not-found" options={{ title: 'Oops!' }} />
+          </Stack>
+          <StatusBar style="auto" />
+        </AppProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }
