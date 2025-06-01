@@ -79,12 +79,10 @@ const styles = StyleSheet.create({
     height: Platform.OS === 'ios' ? 90 : 70, // Slightly increased for better UX
     paddingBottom: Platform.OS === 'ios' ? 30 : 10,
     paddingTop: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
     elevation: 8, // Better shadow on Android
-    shadowColor: '#000', // iOS shadow
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowColor: COLORS.primary, // iOS shadow
+    shadowOffset: { width: 0, height: -1 },
+    shadowOpacity: 0.6,
   },
   tabBarLabel: {
     fontFamily: TYPOGRAPHY.body.fontFamily,

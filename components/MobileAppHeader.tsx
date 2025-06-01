@@ -250,7 +250,7 @@ export default function MobileAppHeader({
   };
 
   // Get theme-aware colors
-  const headerBgColor = isDarkMode ? COLORS.surfaceDark : COLORS.primary;
+  const headerBgColor = isDarkMode ? COLORS.surfaceDark : COLORS.white;
   const textColor = isDarkMode ? COLORS.textLight : COLORS.white;
   const menuBgColor = isDarkMode ? COLORS.surfaceDark : COLORS.white;
   const menuTextColor = isDarkMode ? COLORS.textLight : COLORS.secondary;
@@ -336,7 +336,9 @@ export default function MobileAppHeader({
       <StatusBar
         barStyle="light-content"
         backgroundColor={headerBgColor}
-        translucent={false}
+        // borderColor={COLORS.primary}
+        // borderBottomWidth={1}
+        translucent={true}
       />
       <Animated.View
         style={[
@@ -347,22 +349,36 @@ export default function MobileAppHeader({
       >
         <SafeAreaView
           edges={['top']}
-          style={{ backgroundColor: headerBgColor }}
+          style={{
+            backgroundColor: headerBgColor,
+            shadowColor: COLORS.primary,
+            elevation: 8, // Better shadow on Android
+            shadowOffset: { width: 0, height: -1 },
+            shadowOpacity: 0.6,
+          }}
         >
           <View style={styles.header}>
             {/* Left Section - Logo and Title */}
             <View style={styles.leftSection}>
-              <Image
-                source={require('@/assets/images/icon.png')}
-                style={styles.logo}
-                resizeMode="contain"
-              />
-              <Text
+              {isDarkMode ? (
+                <Image
+                  source={require('@/assets/images/dark-logo.png')}
+                  style={styles.logo}
+                  resizeMode="contain"
+                />
+              ) : (
+                <Image
+                  source={require('@/assets/images/light-logo.png')}
+                  style={styles.logo}
+                  resizeMode="contain"
+                />
+              )}
+              {/* <Text
                 style={[styles.headerTitle, { color: textColor }]}
                 numberOfLines={1}
               >
                 {title}
-              </Text>
+              </Text> */}
             </View>
 
             {/* Right Section - Navigation and Menu */}
@@ -377,7 +393,7 @@ export default function MobileAppHeader({
                 </TouchableOpacity>
               )}
 
-              {shouldShowHome && (
+              {/* {shouldShowHome && (
                 <TouchableOpacity
                   style={styles.iconButton}
                   onPress={handleHome}
@@ -385,7 +401,7 @@ export default function MobileAppHeader({
                 >
                   <Home size={22} color={textColor} />
                 </TouchableOpacity>
-              )}
+              )} */}
 
               {showRefresh && (
                 <TouchableOpacity
@@ -433,14 +449,24 @@ export default function MobileAppHeader({
                 },
               ]}
             >
-              <Image
+              {/* <Image
                 source={require('@/assets/images/icon.png')}
                 style={styles.menuLogo}
                 resizeMode="contain"
-              />
-              <Text style={[styles.menuTitle, { color: menuTextColor }]}>
-                THE CLIFF NEWS
-              </Text>
+              /> */}
+              {isDarkMode ? (
+                <Image
+                  source={require('@/assets/images/dark-logo.png')}
+                  style={styles.menuLogo}
+                  resizeMode="contain"
+                />
+              ) : (
+                <Image
+                  source={require('@/assets/images/light-logo.png')}
+                  style={styles.menuLogo}
+                  resizeMode="contain"
+                />
+              )}
               <TouchableOpacity onPress={closeMenu} style={styles.closeButton}>
                 <X size={24} color={menuTextColor} />
               </TouchableOpacity>
@@ -618,7 +644,7 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   logo: {
-    width: 32,
+    width: 150,
     height: 32,
     marginRight: 12,
   },
@@ -654,8 +680,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   menuLogo: {
-    width: 40,
-    height: 40,
+    width: 150,
+    height: 32,
+    marginRight: 'auto',
   },
   menuTitle: {
     fontFamily: TYPOGRAPHY.heading.fontFamily,
