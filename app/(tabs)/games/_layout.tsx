@@ -15,17 +15,20 @@ export default function GamesStackLayout() {
       screenOptions={{
         headerStyle: {
           backgroundColor: headerBackgroundColor,
-          // shadowOpacity: 0,
-          // elevation: 0,
         },
         headerTintColor: headerTintColor,
         headerTitleStyle: {
           fontFamily: TYPOGRAPHY.heading.fontFamily,
           fontSize: 18,
+          fontWeight: 'bold',
         },
         headerTitleAlign: 'center',
         headerBackTitle: 'Games', // iOS back button text
-        // headerBackTitleVisible: false, // Hide back title on iOS
+        headerBackVisible: true, // Show back title on iOS
+        animation: 'slide_from_right',
+        // Ensure back button is always visible
+        headerLeft: undefined, // Let the stack handle the back button
+        gestureEnabled: true, // Enable swipe back gesture
       }}
     >
       <Stack.Screen
@@ -39,6 +42,7 @@ export default function GamesStackLayout() {
         options={{
           title: 'Sudoku',
           headerShown: true, // Show header with back button
+          headerBackVisible: true, // Ensure back button is visible
         }}
       />
       <Stack.Screen
@@ -46,6 +50,7 @@ export default function GamesStackLayout() {
         options={{
           title: 'Tic Tac Toe',
           headerShown: true, // Show header with back button
+          headerBackVisible: true, // Ensure back button is visible
         }}
       />
       <Stack.Screen
@@ -53,6 +58,7 @@ export default function GamesStackLayout() {
         options={{
           title: '2048',
           headerShown: true, // Show header with back button
+          headerBackVisible: true, // Ensure back button is visible
         }}
       />
       <Stack.Screen
@@ -60,6 +66,7 @@ export default function GamesStackLayout() {
         options={{
           title: 'Word Puzzle',
           headerShown: true, // Show header with back button
+          headerBackVisible: true, // Ensure back button is visible
         }}
       />
     </Stack>

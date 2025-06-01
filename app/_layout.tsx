@@ -11,6 +11,7 @@ import {
   OpenSans_600SemiBold,
 } from '@expo-google-fonts/open-sans';
 import { AppProvider } from '@/context/AppContext';
+import { ThemeProvider } from '@/context/ThemeContext';
 import SplashScreenComponent from '@/components/splash';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
@@ -178,12 +179,14 @@ export default function RootLayout() {
 
   console.log('App is ready, rendering main app structure.');
   return (
-    <AppProvider>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" options={{ title: 'Oops!' }} />
-      </Stack>
-      <StatusBar style="auto" />
-    </AppProvider>
+    <ThemeProvider>
+      <AppProvider>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="+not-found" options={{ title: 'Oops!' }} />
+        </Stack>
+        <StatusBar style="auto" />
+      </AppProvider>
+    </ThemeProvider>
   );
 }
