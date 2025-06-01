@@ -1,18 +1,18 @@
-// app/(tabs)/_layout.tsx (UPDATED)
+// In app/(tabs)/_layout.tsx - Update the entire component:
+
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { StyleSheet, Platform } from 'react-native';
 import { Newspaper, FileText, Gamepad2, BookOpen } from 'lucide-react-native';
-import { useColorScheme } from 'react-native';
 import { COLORS, TYPOGRAPHY } from '@/constants/Theme';
+import { useTheme } from '@/context/ThemeContext';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const { isDarkMode, colors } = useTheme();
 
-  const activeTabColor = COLORS.primary;
-  const inactiveTabColor = isDark ? COLORS.gray : COLORS.secondary;
-  const tabBackgroundColor = isDark ? COLORS.surfaceDark : COLORS.surfaceLight;
+  const activeTabColor = colors.primary;
+  const inactiveTabColor = colors.textSecondary;
+  const tabBackgroundColor = colors.surface;
 
   return (
     <Tabs
@@ -23,11 +23,11 @@ export default function TabLayout() {
           styles.tabBar,
           {
             backgroundColor: tabBackgroundColor,
-            borderTopColor: isDark ? COLORS.darkGray : COLORS.lightGray,
+            borderTopColor: colors.textSecondary,
           },
         ],
         tabBarLabelStyle: styles.tabBarLabel,
-        headerShown: false, // All headers managed by individual screens
+        headerShown: false,
       }}
     >
       <Tabs.Screen
@@ -76,13 +76,14 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    height: Platform.OS === 'ios' ? 90 : 70, // Slightly increased for better UX
+    height: Platform.OS === 'ios' ? 90 : 70,
     paddingBottom: Platform.OS === 'ios' ? 30 : 10,
     paddingTop: 10,
-    elevation: 8, // Better shadow on Android
-    shadowColor: COLORS.primary, // iOS shadow
+    elevation: 8,
     shadowOffset: { width: 0, height: -1 },
     shadowOpacity: 0.6,
+    shadowRadius: 4,
+    // Remove shadowColor - it's now dynamic
   },
   tabBarLabel: {
     fontFamily: TYPOGRAPHY.body.fontFamily,

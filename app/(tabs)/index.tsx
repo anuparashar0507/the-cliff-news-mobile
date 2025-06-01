@@ -9,6 +9,7 @@ import WebViewLoading from '@/components/WebViewLoading';
 import OfflineMessage from '@/components/OfflineMessage';
 import MobileAppHeader from '@/components/MobileAppHeader';
 import { useAppContext } from '@/context/AppContext';
+import { useTheme } from '@/context/ThemeContext';
 import Animated, { useSharedValue } from 'react-native-reanimated';
 import Constants from 'expo-constants';
 
@@ -41,6 +42,7 @@ export default function HomeScreen() {
     isConnected,
     isExpoGo: contextIsExpoGo,
   } = useAppContext();
+  const { isDarkMode, colors } = useTheme();
   const [currentUrl, setCurrentUrl] = useState(
     params.urlToLoad || loadUrl || HOME_URL
   );
@@ -55,10 +57,85 @@ export default function HomeScreen() {
     setCurrentTitle(isArticle && title ? title : 'THE CLIFF NEWS');
   };
 
-  // FIXED: Simplified injected JavaScript without problematic properties
+  // Enhanced injected JavaScript with theme support
   const injectedJavaScript = `
     (function() {
       console.log('Enhanced Mobile WebView Script Loaded');
+      
+      // Apply theme from React Native
+      function applyTheme(isDark) {
+        const themeMode = isDark ? 'dark' : 'light';
+        
+        // Save theme to localStorage for persistence
+        try {
+          localStorage.setItem('themeMode', themeMode);
+        } catch (e) {
+          console.log('Could not save theme to localStorage:', e);
+        }
+        
+        // Apply theme styles
+        let themeStyleId = 'rn-theme-styles';
+        let existingThemeStyle = document.getElementById(themeStyleId);
+        if (existingThemeStyle) {
+          existingThemeStyle.remove();
+        }
+        
+        const themeStyles = document.createElement('style');
+        themeStyles.id = themeStyleId;
+        themeStyles.textContent = \`
+          :root {
+            --theme-bg: \${isDark ? '#0F0F0F' : '#FFFFFF'};
+            --theme-surface: \${isDark ? '#1A1A1A' : '#FFFFFF'};
+            --theme-text: \${isDark ? '#FFFFFF' : '#1F2937'};
+            --theme-text-secondary: \${isDark ? '#B0B0B0' : '#6B7280'};
+            --theme-border: \${isDark ? '#333333' : '#E5E7EB'};
+          }
+          
+          body {
+            background-color: var(--theme-bg) !important;
+            color: var(--theme-text) !important;
+            transition: background-color 0.3s ease, color 0.3s ease;
+          }
+          
+          .site-content,
+          .main-content,
+          article,
+          .entry-content {
+            background-color: var(--theme-bg) !important;
+            color: var(--theme-text) !important;
+          }
+          
+          .entry-title,
+          h1, h2, h3, h4, h5, h6 {
+            color: var(--theme-text) !important;
+          }
+          
+          p, .entry-content p {
+            color: var(--theme-text) !important;
+          }
+          
+          .widget,
+          .sidebar {
+            background-color: var(--theme-surface) !important;
+            border-color: var(--theme-border) !important;
+          }
+          
+          .wp-block-image img {
+            border-radius: 8px !important;
+            \${isDark ? 'filter: brightness(0.9);' : ''}
+          }
+          
+          a {
+            color: #FFA500 !important;
+          }
+          
+          .entry-meta,
+          .post-meta {
+            color: var(--theme-text-secondary) !important;
+          }
+        \`;
+        document.head.appendChild(themeStyles);
+      }
       
       function optimizeForMobile() {
         const elementsToHide = [
@@ -119,9 +196,26 @@ export default function HomeScreen() {
         }
       }
       
-      optimizeForMobile();
+      // Apply initial theme based on saved preference or system
+      function initializeTheme() {
+        let savedTheme = null;
+        try {
+          savedTheme = localStorage.getItem('themeMode');
+        } catch (e) {
+          console.log('Could not read theme from localStorage:', e);
+        }
+        
+        // Default to light if no saved preference
+        const isDark = savedTheme === 'dark';
+        applyTheme(isDark);
+      }
       
-      const observer = new MutationObserver(optimizeForMobile);
+      optimizeForMobile();
+      initializeTheme();
+      
+      const observer = new MutationObserver(() => {
+        optimizeForMobile();
+      });
       observer.observe(document.body, { childList: true, subtree: true });
       
       function sendPageInfo() {
@@ -177,6 +271,21 @@ export default function HomeScreen() {
         lastScrollY = scrollY;
       });
       
+      // Listen for theme changes from React Native
+      window.addEventListener('message', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'THEME_CHANGE') {
+            applyTheme(data.isDark);
+          }
+        } catch (e) {
+          // Not a valid JSON message, ignore
+        }
+      });
+      
+      // Expose theme function globally for React Native to call
+      window.applyTheme = applyTheme;
+      
       setInterval(optimizeForMobile, 3000);
       
     })();
@@ -202,6 +311,17 @@ export default function HomeScreen() {
     return () => clearTimeout(timer);
   }, []);
 
+  // Update WebView theme when theme changes
+  useEffect(() => {
+    if (webViewRef.current) {
+      const themeMessage = JSON.stringify({
+        type: 'THEME_CHANGE',
+        isDark: isDarkMode,
+      });
+      webViewRef.current.postMessage(themeMessage);
+    }
+  }, [isDarkMode]);
+
   const handleLoadStart = () => {
     setIsLoading(true);
     setHasError(false);
@@ -209,6 +329,14 @@ export default function HomeScreen() {
 
   const handleLoadEnd = () => {
     setIsLoading(false);
+    // Apply theme after page loads
+    if (webViewRef.current) {
+      const themeMessage = JSON.stringify({
+        type: 'THEME_CHANGE',
+        isDark: isDarkMode,
+      });
+      webViewRef.current.postMessage(themeMessage);
+    }
   };
 
   const handleError = (syntheticEvent: any) => {
@@ -295,7 +423,7 @@ export default function HomeScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <MobileAppHeader
         title={currentTitle}
         showBackButton={isArticlePage}
@@ -313,7 +441,7 @@ export default function HomeScreen() {
           <WebView
             ref={webViewRef}
             source={{ uri: currentUrl }}
-            style={styles.webview}
+            style={[styles.webview, { backgroundColor: colors.background }]}
             onLoadStart={handleLoadStart}
             onLoadEnd={handleLoadEnd}
             onError={handleError}
@@ -332,7 +460,6 @@ export default function HomeScreen() {
             bounces={true}
             scrollEnabled={true}
             nestedScrollEnabled={true}
-            // FIXED: Removed all problematic properties like decelerationRate
           />
           {isLoading && <WebViewLoading />}
         </>
@@ -344,10 +471,8 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.white,
   },
   webview: {
     flex: 1,
-    backgroundColor: COLORS.white,
   },
 });

@@ -10,18 +10,24 @@ import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS, DARK_COLORS, getThemeColors } from '@/constants/Theme';
 
+type ThemeMode = 'light' | 'dark' | 'system';
+
 type ThemeContextType = {
   isDarkMode: boolean;
+  themeMode: ThemeMode;
   toggleTheme: () => void;
+  setThemeMode: (mode: ThemeMode) => void;
   colors: typeof COLORS;
-  setTheme: (isDark: boolean) => void;
+  isLoaded: boolean;
 };
 
 const ThemeContext = createContext<ThemeContextType>({
   isDarkMode: false,
+  themeMode: 'system',
   toggleTheme: () => {},
+  setThemeMode: () => {},
   colors: COLORS,
-  setTheme: () => {},
+  isLoaded: false,
 });
 
 export const useTheme = () => {
@@ -36,79 +42,82 @@ interface ThemeProviderProps {
   children: ReactNode;
 }
 
+const THEME_STORAGE_KEY = 'themeMode';
+
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const systemColorScheme = useColorScheme();
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
   const [isLoaded, setIsLoaded] = useState(false);
+
+  // Calculate if dark mode should be active
+  const isDarkMode =
+    themeMode === 'dark' ||
+    (themeMode === 'system' && systemColorScheme === 'dark');
 
   // Load saved theme preference on app start
   useEffect(() => {
     loadThemePreference();
   }, []);
 
-  // Sync with system theme if no preference is saved
+  // Listen to system theme changes when in system mode
   useEffect(() => {
-    if (isLoaded) {
-      syncWithSystemTheme();
+    if (isLoaded && themeMode === 'system') {
+      // System theme changed, no need to save anything
+      console.log('System theme changed to:', systemColorScheme);
     }
-  }, [systemColorScheme, isLoaded]);
+  }, [systemColorScheme, themeMode, isLoaded]);
 
   const loadThemePreference = async () => {
     try {
-      const savedTheme = await AsyncStorage.getItem('themeMode');
-      if (savedTheme !== null) {
-        setIsDarkMode(savedTheme === 'dark');
+      const savedThemeMode = await AsyncStorage.getItem(THEME_STORAGE_KEY);
+      if (
+        savedThemeMode &&
+        ['light', 'dark', 'system'].includes(savedThemeMode)
+      ) {
+        setThemeModeState(savedThemeMode as ThemeMode);
       } else {
-        // No saved preference, use system theme
-        setIsDarkMode(systemColorScheme === 'dark');
+        // No saved preference, default to system
+        setThemeModeState('system');
       }
     } catch (error) {
       console.error('Error loading theme preference:', error);
       // Fallback to system theme
-      setIsDarkMode(systemColorScheme === 'dark');
+      setThemeModeState('system');
     } finally {
       setIsLoaded(true);
     }
   };
 
-  const syncWithSystemTheme = async () => {
+  const saveThemePreference = async (mode: ThemeMode) => {
     try {
-      const savedTheme = await AsyncStorage.getItem('themeMode');
-      // Only sync if no manual preference is set
-      if (savedTheme === null) {
-        setIsDarkMode(systemColorScheme === 'dark');
-      }
-    } catch (error) {
-      console.error('Error syncing with system theme:', error);
-    }
-  };
-
-  const saveThemePreference = async (theme: 'light' | 'dark') => {
-    try {
-      await AsyncStorage.setItem('themeMode', theme);
+      await AsyncStorage.setItem(THEME_STORAGE_KEY, mode);
+      console.log('Theme saved:', mode);
     } catch (error) {
       console.error('Error saving theme preference:', error);
     }
   };
 
+  const setThemeMode = (mode: ThemeMode) => {
+    console.log('Setting theme mode to:', mode);
+    setThemeModeState(mode);
+    saveThemePreference(mode);
+  };
+
   const toggleTheme = () => {
-    const newTheme = !isDarkMode;
-    setIsDarkMode(newTheme);
-    saveThemePreference(newTheme ? 'dark' : 'light');
+    const newMode = isDarkMode ? 'light' : 'dark';
+    setThemeMode(newMode);
   };
 
-  const setTheme = (isDark: boolean) => {
-    setIsDarkMode(isDark);
-    saveThemePreference(isDark ? 'dark' : 'light');
-  };
-
+  // Get theme-appropriate colors
   const colors = getThemeColors(isDarkMode);
 
   const value: ThemeContextType = {
     isDarkMode,
+    themeMode,
     toggleTheme,
+    setThemeMode,
     colors,
-    setTheme,
+    isLoaded,
   };
 
   // Don't render until theme is loaded to prevent flash

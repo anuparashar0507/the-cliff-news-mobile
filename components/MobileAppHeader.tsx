@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, usePathname } from 'expo-router';
 import { COLORS, TYPOGRAPHY } from '@/constants/Theme';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Menu,
   RefreshCw,
@@ -47,6 +48,7 @@ interface MobileAppHeaderProps {
   onBackPress?: () => void;
   onHomePress?: () => void;
   scrollY?: Animated.SharedValue<number>;
+  isDarkMode?: boolean;
   onThemeChange?: (isDark: boolean) => void;
 }
 
@@ -149,16 +151,66 @@ export default function MobileAppHeader({
   onBackPress,
   onHomePress,
   scrollY,
+  isDarkMode: propIsDarkMode,
   onThemeChange,
 }: MobileAppHeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const systemColorScheme = useColorScheme();
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [expandedItems, setExpandedItems] = useState<{
     [key: string]: boolean;
   }>({});
-  const colorScheme = useColorScheme();
-  const [isDarkMode, setIsDarkMode] = useState(colorScheme === 'dark');
+  const [isDarkMode, setIsDarkMode] = useState(
+    propIsDarkMode ?? systemColorScheme === 'dark'
+  );
+
+  // Load theme from storage on mount
+  useEffect(() => {
+    loadThemeFromStorage();
+  }, []);
+
+  // Sync with prop changes
+  useEffect(() => {
+    if (propIsDarkMode !== undefined) {
+      setIsDarkMode(propIsDarkMode);
+    }
+  }, [propIsDarkMode]);
+
+  const loadThemeFromStorage = async () => {
+    try {
+      const savedTheme = await AsyncStorage.getItem('themeMode');
+      if (savedTheme) {
+        const isDark = savedTheme === 'dark';
+        setIsDarkMode(isDark);
+        // Also update localStorage for WebView
+        updateWebViewTheme(isDark);
+      }
+    } catch (error) {
+      console.error('Error loading theme:', error);
+    }
+  };
+
+  const updateWebViewTheme = (isDark: boolean) => {
+    // Update localStorage for WebView to access
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem('themeMode', isDark ? 'dark' : 'light');
+      }
+    } catch (error) {
+      console.log('WebView localStorage not available');
+    }
+  };
+
+  const saveThemeToStorage = async (isDark: boolean) => {
+    try {
+      await AsyncStorage.setItem('themeMode', isDark ? 'dark' : 'light');
+      updateWebViewTheme(isDark);
+      onThemeChange?.(isDark);
+    } catch (error) {
+      console.error('Error saving theme:', error);
+    }
+  };
 
   // Auto-detect navigation needs
   const isMainTab = [
@@ -175,11 +227,9 @@ export default function MobileAppHeader({
     if (onBackPress) {
       onBackPress();
     } else {
-      // Safe navigation back
       if (router.canGoBack()) {
         router.back();
       } else {
-        // If can't go back, go to home
         router.replace('/(tabs)');
       }
     }
@@ -189,7 +239,6 @@ export default function MobileAppHeader({
     if (onHomePress) {
       onHomePress();
     } else {
-      // For PDF reader, replace to close it completely
       if (pathname.includes('/reader')) {
         router.replace('/(tabs)/ebooks');
       } else {
@@ -230,7 +279,6 @@ export default function MobileAppHeader({
     } else if (url.includes('e-paper')) {
       router.push('/(tabs)/epaper');
     } else {
-      // Navigate to web URL in main WebView
       router.push({
         pathname: '/(tabs)',
         params: { urlToLoad: url },
@@ -246,12 +294,15 @@ export default function MobileAppHeader({
   const toggleTheme = () => {
     const newTheme = !isDarkMode;
     setIsDarkMode(newTheme);
-    onThemeChange?.(newTheme);
+    saveThemeToStorage(newTheme);
   };
 
-  // Get theme-aware colors
-  const headerBgColor = isDarkMode ? COLORS.surfaceDark : COLORS.white;
-  const textColor = isDarkMode ? COLORS.textLight : COLORS.white;
+  // Enhanced color scheme for better visibility
+  const headerBgColor = isDarkMode ? COLORS.backgroundDark : COLORS.white;
+  const iconColor = isDarkMode ? COLORS.textLight : COLORS.secondary;
+  const iconBgColor = isDarkMode
+    ? 'rgba(255, 255, 255, 0.1)'
+    : 'rgba(20, 33, 61, 0.1)';
   const menuBgColor = isDarkMode ? COLORS.surfaceDark : COLORS.white;
   const menuTextColor = isDarkMode ? COLORS.textLight : COLORS.secondary;
   const menuItemBgColor = isDarkMode ? COLORS.backgroundDark : COLORS.lightGray;
@@ -334,11 +385,9 @@ export default function MobileAppHeader({
   return (
     <>
       <StatusBar
-        barStyle="light-content"
+        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
         backgroundColor={headerBgColor}
-        // borderColor={COLORS.primary}
-        // borderBottomWidth={1}
-        translucent={true}
+        translucent={false}
       />
       <Animated.View
         style={[
@@ -351,75 +400,51 @@ export default function MobileAppHeader({
           edges={['top']}
           style={{
             backgroundColor: headerBgColor,
-            shadowColor: COLORS.primary,
-            elevation: 8, // Better shadow on Android
-            shadowOffset: { width: 0, height: -1 },
-            shadowOpacity: 0.6,
           }}
         >
           <View style={styles.header}>
             {/* Left Section - Logo and Title */}
             <View style={styles.leftSection}>
-              {isDarkMode ? (
-                <Image
-                  source={require('@/assets/images/dark-logo.png')}
-                  style={styles.logo}
-                  resizeMode="contain"
-                />
-              ) : (
-                <Image
-                  source={require('@/assets/images/light-logo.png')}
-                  style={styles.logo}
-                  resizeMode="contain"
-                />
-              )}
-              {/* <Text
-                style={[styles.headerTitle, { color: textColor }]}
-                numberOfLines={1}
-              >
-                {title}
-              </Text> */}
+              <Image
+                source={
+                  isDarkMode
+                    ? require('@/assets/images/dark-logo.png')
+                    : require('@/assets/images/light-logo.png')
+                }
+                style={styles.logo}
+                resizeMode="contain"
+              />
             </View>
 
             {/* Right Section - Navigation and Menu */}
             <View style={styles.rightSection}>
               {shouldShowBack && (
                 <TouchableOpacity
-                  style={styles.iconButton}
+                  style={[styles.iconButton, { backgroundColor: iconBgColor }]}
                   onPress={handleBack}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <ArrowLeft size={24} color={textColor} />
+                  <ArrowLeft size={24} color={iconColor} />
                 </TouchableOpacity>
               )}
 
-              {/* {shouldShowHome && (
-                <TouchableOpacity
-                  style={styles.iconButton}
-                  onPress={handleHome}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Home size={22} color={textColor} />
-                </TouchableOpacity>
-              )} */}
-
               {showRefresh && (
                 <TouchableOpacity
-                  style={styles.iconButton}
+                  style={[styles.iconButton, { backgroundColor: iconBgColor }]}
                   onPress={handleRefresh}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <RefreshCw size={20} color={textColor} />
+                  <RefreshCw size={20} color={iconColor} />
                 </TouchableOpacity>
               )}
 
               {/* Menu Button */}
               <TouchableOpacity
-                style={styles.iconButton}
+                style={[styles.iconButton, { backgroundColor: iconBgColor }]}
                 onPress={handleMenuPress}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Menu size={24} color={textColor} />
+                <Menu size={24} color={iconColor} />
               </TouchableOpacity>
             </View>
           </View>
@@ -449,24 +474,15 @@ export default function MobileAppHeader({
                 },
               ]}
             >
-              {/* <Image
-                source={require('@/assets/images/icon.png')}
+              <Image
+                source={
+                  isDarkMode
+                    ? require('@/assets/images/dark-logo.png')
+                    : require('@/assets/images/light-logo.png')
+                }
                 style={styles.menuLogo}
                 resizeMode="contain"
-              /> */}
-              {isDarkMode ? (
-                <Image
-                  source={require('@/assets/images/dark-logo.png')}
-                  style={styles.menuLogo}
-                  resizeMode="contain"
-                />
-              ) : (
-                <Image
-                  source={require('@/assets/images/light-logo.png')}
-                  style={styles.menuLogo}
-                  resizeMode="contain"
-                />
-              )}
+              />
               <TouchableOpacity onPress={closeMenu} style={styles.closeButton}>
                 <X size={24} color={menuTextColor} />
               </TouchableOpacity>
@@ -619,6 +635,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 4,
     zIndex: 1000,
+    elevation: 4,
   },
   header: {
     flexDirection: 'row',
@@ -636,22 +653,25 @@ const styles = StyleSheet.create({
   rightSection: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
   iconButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    marginLeft: 8,
+    padding: 10,
+    borderRadius: 24,
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: COLORS.black,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   logo: {
     width: 150,
     height: 32,
     marginRight: 12,
-  },
-  headerTitle: {
-    fontFamily: TYPOGRAPHY.heading.fontFamily,
-    fontSize: 16,
-    fontWeight: 'bold',
   },
   // Side Menu Styles
   menuOverlay: {
@@ -683,13 +703,6 @@ const styles = StyleSheet.create({
     width: 150,
     height: 32,
     marginRight: 'auto',
-  },
-  menuTitle: {
-    fontFamily: TYPOGRAPHY.heading.fontFamily,
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginLeft: 12,
-    flex: 1,
   },
   closeButton: {
     padding: 8,

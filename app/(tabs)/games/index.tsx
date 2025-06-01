@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { useTheme } from '@/context/ThemeContext';
 import {
   StyleSheet,
   View,
@@ -142,7 +143,7 @@ const AnimatedGameCard = ({
 
 export default function GamesScreen() {
   const router = useRouter();
-
+  const { isDarkMode, colors } = useTheme();
   const gameOptions: GameOption[] = [
     {
       id: 'sudoku',
@@ -162,29 +163,11 @@ export default function GamesScreen() {
       gradientColors: [COLORS.success, darkenColor(COLORS.success, 20)],
       route: '/games/tic-tac-toe',
     },
-    // {
-    //   id: '2048',
-    //   title: '2048 Masters',
-    //   description: 'Slide, merge, and strategize to reach the 2048 tile.',
-    //   icon: <SigmaIcon color={COLORS.white} />,
-    //   color: COLORS.accent,
-    //   gradientColors: [COLORS.accent, darkenColor(COLORS.accent, 20)],
-    //   route: '/games/2048',
-    // },
-    // {
-    //   id: 'word-puzzle',
-    //   title: 'Word Finder Pro',
-    //   description: 'Unscramble letters and expand your vocabulary.',
-    //   icon: <WordPuzzleIcon color={COLORS.white} />,
-    //   color: COLORS.secondary,
-    //   gradientColors: [COLORS.secondary, darkenColor(COLORS.secondary, 20)],
-    //   route: '/games/word-puzzle',
-    // },
   ];
 
   return (
     <SafeAreaView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.background }]}
       edges={['top', 'left', 'right', 'bottom']}
     >
       {/* The header "Fun Zone" is handled by TabLayout, so no need for a title here */}
@@ -193,9 +176,15 @@ export default function GamesScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.screenHeader}>
-          <Gamepad2 size={32} color={COLORS.primary} />
-          <Text style={styles.screenTitle}>Game Zone</Text>
-          <Text style={styles.screenSubtitle}>Choose your challenge!</Text>
+          <Gamepad2 size={32} color={colors.primary} />
+          <Text style={[styles.screenTitle, { color: colors.textPrimary }]}>
+            Game Zone
+          </Text>
+          <Text
+            style={[styles.screenSubtitle, { color: colors.textSecondary }]}
+          >
+            Choose your challenge!
+          </Text>
         </View>
 
         <View style={styles.gamesGrid}>
@@ -216,7 +205,7 @@ export default function GamesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background, // A slightly off-white or very light gray
+    // backgroundColor: COLORS.background, // A slightly off-white or very light gray
   },
   scrollContent: {
     paddingTop: 20, // Space from top if header is transparent or part of scroll
@@ -230,13 +219,11 @@ const styles = StyleSheet.create({
   screenTitle: {
     fontFamily: TYPOGRAPHY.heading.fontFamily,
     fontSize: 28,
-    color: COLORS.secondary,
     marginTop: 8,
   },
   screenSubtitle: {
     fontFamily: TYPOGRAPHY.body.fontFamily,
     fontSize: 16,
-    color: COLORS.gray,
     marginTop: 4,
   },
   gamesGrid: {

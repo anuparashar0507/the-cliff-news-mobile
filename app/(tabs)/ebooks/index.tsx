@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTheme } from '@/context/ThemeContext';
 import {
   StyleSheet,
   View,
@@ -31,7 +32,6 @@ import { ebooksData, getBooksByCategory, EBook } from '@/utils/ebooksdata';
 
 const { width } = Dimensions.get('window');
 const cardWidth = (width - 60) / 2;
-
 const AnimatedCard = ({
   book,
   index,
@@ -43,6 +43,9 @@ const AnimatedCard = ({
 }) => {
   const opacity = useSharedValue(0);
   const translateY = useSharedValue(30);
+  const { isDarkMode, colors } = useTheme();
+
+  const bookAuthorColor = isDarkMode ? colors.textLight : COLORS.secondary;
 
   useEffect(() => {
     opacity.value = withDelay(
@@ -76,12 +79,18 @@ const AnimatedCard = ({
           </View>
         </View>
         <View style={styles.bookInfo}>
-          <Text style={styles.bookTitle} numberOfLines={2}>
+          <Text
+            style={[styles.bookTitle, { color: bookAuthorColor }]}
+            numberOfLines={2}
+          >
             {book.title}
           </Text>
           <View style={styles.authorRow}>
             <User size={12} color={COLORS.gray} />
-            <Text style={styles.bookAuthor} numberOfLines={1}>
+            <Text
+              style={[styles.bookAuthor, { color: bookAuthorColor }]}
+              numberOfLines={1}
+            >
               {book.author}
             </Text>
           </View>
@@ -107,7 +116,7 @@ export default function EBooksScreen() {
     'religious' | 'novels' | null
   >(null);
   const [books, setBooks] = useState<EBook[]>([]);
-
+  const { isDarkMode, colors } = useTheme();
   useEffect(() => {
     if (selectedCategory) {
       setBooks(getBooksByCategory(selectedCategory));
@@ -136,20 +145,27 @@ export default function EBooksScreen() {
   if (!selectedCategory) {
     return (
       <SafeAreaView
-        style={styles.container}
+        style={[styles.container, { backgroundColor: colors.background }]}
         edges={['top', 'left', 'right', 'bottom']}
       >
         <View style={styles.header}>
-          <BookOpen size={32} color={COLORS.primary} />
-          <Text style={styles.headerTitle}>Digital Library</Text>
-          <Text style={styles.headerSubtitle}>
+          <BookOpen size={32} color={colors.primary} />
+          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
+            Digital Library
+          </Text>
+          <Text
+            style={[styles.headerSubtitle, { color: colors.textSecondary }]}
+          >
             Choose your reading category
           </Text>
         </View>
-
         <ScrollView contentContainerStyle={styles.categoriesContainer}>
           <TouchableOpacity
-            style={[styles.categoryCard, styles.religiousCard]}
+            style={[
+              styles.categoryCard,
+              styles.religiousCard,
+              { backgroundColor: colors.accent },
+            ]}
             onPress={() => handleCategorySelect('religious')}
             activeOpacity={0.8}
           >
@@ -170,7 +186,11 @@ export default function EBooksScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.categoryCard, styles.novelsCard]}
+            style={[
+              styles.categoryCard,
+              styles.novelsCard,
+              { backgroundColor: colors.primary },
+            ]}
             onPress={() => handleCategorySelect('novels')}
             activeOpacity={0.8}
           >
@@ -197,17 +217,29 @@ export default function EBooksScreen() {
   // Books List Screen
   return (
     <SafeAreaView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.background }]}
       edges={['top', 'left', 'right', 'bottom']}
     >
-      <View style={styles.booksHeader}>
+      <View
+        style={[
+          styles.booksHeader,
+          {
+            backgroundColor: colors.surface,
+            borderBottomColor: colors.textSecondary,
+          },
+        ]}
+      >
         <TouchableOpacity
           onPress={handleBackToCategories}
           style={styles.backButton}
         >
-          <Text style={styles.backButtonText}>← Categories</Text>
+          <Text style={[styles.backButtonText, { color: colors.primary }]}>
+            ← Categories
+          </Text>
         </TouchableOpacity>
-        <Text style={styles.categoryHeaderTitle}>
+        <Text
+          style={[styles.categoryHeaderTitle, { color: colors.textPrimary }]}
+        >
           {selectedCategory === 'religious'
             ? 'Religious & Devotional'
             : 'Novels & Stories'}
@@ -235,7 +267,6 @@ export default function EBooksScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   header: {
     alignItems: 'center',
@@ -245,13 +276,11 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: TYPOGRAPHY.heading.fontFamily,
     fontSize: 28,
-    color: COLORS.secondary,
     marginTop: 12,
   },
   headerSubtitle: {
     fontFamily: TYPOGRAPHY.body.fontFamily,
     fontSize: 16,
-    color: COLORS.gray,
     marginTop: 8,
   },
   categoriesContainer: {
@@ -310,7 +339,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 15,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.lightGray,
   },
   backButton: {
     marginRight: 15,
@@ -334,7 +362,7 @@ const styles = StyleSheet.create({
   },
   bookCard: {
     width: cardWidth,
-    backgroundColor: COLORS.white,
+    // backgroundColor: COLORS.white,
     borderRadius: 16,
     overflow: 'hidden',
     elevation: 4,
@@ -346,6 +374,10 @@ const styles = StyleSheet.create({
   thumbnailContainer: {
     position: 'relative',
     height: cardWidth * 1.2,
+    shadowColor: COLORS.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
   },
   thumbnail: {
     width: '100%',
@@ -364,7 +396,7 @@ const styles = StyleSheet.create({
   languageText: {
     fontFamily: TYPOGRAPHY.emphasis.fontFamily,
     fontSize: 10,
-    color: COLORS.white,
+    // color: COLORS.white,
   },
   bookInfo: {
     padding: 12,

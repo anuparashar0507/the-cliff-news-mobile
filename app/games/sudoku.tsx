@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -29,11 +29,11 @@ import {
   RefreshCw,
   Lightbulb,
   Trophy,
-  Settings,
   Eye,
   EyeOff,
   Undo2,
 } from 'lucide-react-native';
+import { useTheme } from '@/context/ThemeContext';
 
 // Helper function to check if a number placement is valid (Sudoku rules)
 const isValidPlacement = (
@@ -79,6 +79,7 @@ interface Move {
 const SudokuGame = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { isDarkMode, colors } = useTheme();
 
   // Grid state: current puzzle view
   const [grid, setGrid] = useState<number[][]>([]);
@@ -107,7 +108,6 @@ const SudokuGame = () => {
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [mistakes, setMistakes] = useState(0);
   const [moveHistory, setMoveHistory] = useState<Move[]>([]);
-  const [showHints, setShowHints] = useState(true);
   const [showErrors, setShowErrors] = useState(true);
 
   // Timer effect
@@ -169,27 +169,60 @@ const SudokuGame = () => {
     if (isLoading) return;
 
     if (initialGridMask[row]?.[col]) {
+      // If it's a fixed cell, just highlight the number
       setSelectedCell(null);
       setHighlightedNumber(grid[row][col] !== 0 ? grid[row][col] : null);
     } else {
+      // Select the cell for input
       setSelectedCell([row, col]);
       setHighlightedNumber(grid[row][col] !== 0 ? grid[row][col] : null);
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
+  // Validate placement and update error state
+  const validateAndUpdateErrors = useCallback(
+    (newGrid: number[][]) => {
+      const newErrorCells: [number, number][] = [];
+
+      for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 9; c++) {
+          if (
+            newGrid[r][c] !== 0 &&
+            !isValidPlacement(newGrid, r, c, newGrid[r][c]) &&
+            !initialGridMask[r]?.[c]
+          ) {
+            newErrorCells.push([r, c]);
+          }
+        }
+      }
+
+      if (showErrors) {
+        setErrorCells(newErrorCells);
+      }
+
+      return newErrorCells;
+    },
+    [initialGridMask, showErrors]
+  );
+
   // Handle pressing a number on the number pad
   const handleNumberPress = (num: number) => {
     if (!selectedCell || isLoading) return;
 
     const [row, col] = selectedCell;
-    if (initialGridMask[row]?.[col]) return;
+    if (initialGridMask[row]?.[col]) return; // Can't modify fixed cells
 
     const oldValue = grid[row][col];
-    const newGrid = grid.map((r) => [...r]);
-    newGrid[row][col] = num;
 
-    // Add to move history for undo
+    // Create new grid with the number placed
+    const newGrid = grid.map((r, rowIndex) =>
+      r.map((cell, colIndex) =>
+        rowIndex === row && colIndex === col ? num : cell
+      )
+    );
+
+    // Add to move history for undo (only if value actually changed)
     if (oldValue !== num) {
       setMoveHistory((prev) => [
         ...prev,
@@ -197,31 +230,16 @@ const SudokuGame = () => {
       ]);
     }
 
+    // Update grid immediately
     setGrid(newGrid);
 
-    // Validate all cells for errors after a number is placed
-    const newErrorCells: [number, number][] = [];
-    let isCurrentMoveError = false;
+    // Validate and check for errors
+    const newErrorCells = validateAndUpdateErrors(newGrid);
 
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 9; c++) {
-        if (
-          newGrid[r][c] !== 0 &&
-          !isValidPlacement(newGrid, r, c, newGrid[r][c])
-        ) {
-          if (!initialGridMask[r]?.[c]) {
-            newErrorCells.push([r, c]);
-            if (r === row && c === col) {
-              isCurrentMoveError = true;
-            }
-          }
-        }
-      }
-    }
-
-    if (showErrors) {
-      setErrorCells(newErrorCells);
-    }
+    // Check if this specific move is an error
+    const isCurrentMoveError = newErrorCells.some(
+      ([errorRow, errorCol]) => errorRow === row && errorCol === col
+    );
 
     // Count mistakes
     if (isCurrentMoveError && num !== 0) {
@@ -240,6 +258,7 @@ const SudokuGame = () => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
 
+    // Update highlighted number
     setHighlightedNumber(num !== 0 ? num : null);
 
     // Check if puzzle is complete and correct
@@ -264,24 +283,15 @@ const SudokuGame = () => {
       // Add to move history
       setMoveHistory((prev) => [...prev, { row, col, oldValue, newValue: 0 }]);
 
-      const newGrid = grid.map((r) => [...r]);
-      newGrid[row][col] = 0;
-      setGrid(newGrid);
+      // Create new grid with cell cleared
+      const newGrid = grid.map((r, rowIndex) =>
+        r.map((cell, colIndex) =>
+          rowIndex === row && colIndex === col ? 0 : cell
+        )
+      );
 
-      const newErrorCells: [number, number][] = [];
-      for (let r = 0; r < 9; r++) {
-        for (let c = 0; c < 9; c++) {
-          if (
-            newGrid[r][c] !== 0 &&
-            !isValidPlacement(newGrid, r, c, newGrid[r][c])
-          ) {
-            if (!initialGridMask[r]?.[c]) newErrorCells.push([r, c]);
-          }
-        }
-      }
-      if (showErrors) {
-        setErrorCells(newErrorCells);
-      }
+      setGrid(newGrid);
+      validateAndUpdateErrors(newGrid);
       setHighlightedNumber(null);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
@@ -292,27 +302,19 @@ const SudokuGame = () => {
     if (moveHistory.length === 0) return;
 
     const lastMove = moveHistory[moveHistory.length - 1];
-    const newGrid = grid.map((r) => [...r]);
-    newGrid[lastMove.row][lastMove.col] = lastMove.oldValue;
+
+    // Create new grid with last move undone
+    const newGrid = grid.map((r, rowIndex) =>
+      r.map((cell, colIndex) =>
+        rowIndex === lastMove.row && colIndex === lastMove.col
+          ? lastMove.oldValue
+          : cell
+      )
+    );
+
     setGrid(newGrid);
     setMoveHistory((prev) => prev.slice(0, -1));
-
-    // Recalculate errors
-    const newErrorCells: [number, number][] = [];
-    for (let r = 0; r < 9; r++) {
-      for (let c = 0; c < 9; c++) {
-        if (
-          newGrid[r][c] !== 0 &&
-          !isValidPlacement(newGrid, r, c, newGrid[r][c])
-        ) {
-          if (!initialGridMask[r]?.[c]) newErrorCells.push([r, c]);
-        }
-      }
-    }
-    if (showErrors) {
-      setErrorCells(newErrorCells);
-    }
-
+    validateAndUpdateErrors(newGrid);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
@@ -330,82 +332,99 @@ const SudokuGame = () => {
     }
   };
 
-  // Memoized function to get cell styles
-  const getCellStyles = useCallback(
-    (rowIndex: number, colIndex: number) => {
-      const style: any[] = [styles.cell];
-      const isSelected =
-        selectedCell &&
-        selectedCell[0] === rowIndex &&
-        selectedCell[1] === colIndex;
-      const isFixed = initialGridMask[rowIndex]?.[colIndex];
-      const cellValue = grid[rowIndex]?.[colIndex];
-      const isError = errorCells.some(
-        (cell) => cell[0] === rowIndex && cell[1] === colIndex
-      );
+  // Get cell styles based on state
+  // Get cell styles based on state
+  const getCellStyles = (rowIndex: number, colIndex: number) => {
+    const baseStyle: any[] = [
+      styles.cell,
+      {
+        backgroundColor: colors.surface,
+        borderColor: colors.textSecondary,
+      },
+    ];
 
-      // Thick borders for 3x3 subgrids
-      if ((rowIndex + 1) % 3 === 0 && rowIndex < 8)
-        style.push(styles.bottomThickBorder);
-      if ((colIndex + 1) % 3 === 0 && colIndex < 8)
-        style.push(styles.rightThickBorder);
+    const isSelected =
+      selectedCell &&
+      selectedCell[0] === rowIndex &&
+      selectedCell[1] === colIndex;
+    const isFixed = initialGridMask[rowIndex]?.[colIndex];
+    const cellValue = grid[rowIndex]?.[colIndex];
+    const isError = errorCells.some(
+      ([errorRow, errorCol]) => errorRow === rowIndex && errorCol === colIndex
+    );
 
-      if (isSelected && !isFixed) {
-        style.push(styles.selectedCell);
-      } else if (selectedCell) {
-        const [sRow, sCol] = selectedCell;
-        const inSameBox =
-          Math.floor(sRow / 3) === Math.floor(rowIndex / 3) &&
-          Math.floor(sCol / 3) === Math.floor(colIndex / 3);
-        if (
-          !isSelected &&
-          (sRow === rowIndex || sCol === colIndex || inSameBox)
-        ) {
-          style.push(styles.relatedCell);
-        }
-      }
+    // Thick borders for 3x3 subgrids
+    if ((rowIndex + 1) % 3 === 0 && rowIndex < 8) {
+      baseStyle.push({
+        borderBottomWidth: 2,
+        borderBottomColor: colors.textPrimary,
+      });
+    }
+    if ((colIndex + 1) % 3 === 0 && colIndex < 8) {
+      baseStyle.push({
+        borderRightWidth: 2,
+        borderRightColor: colors.textPrimary,
+      });
+    }
 
-      if (isFixed) style.push(styles.fixedCell);
-      if (isError && !isFixed && showErrors) style.push(styles.errorCell);
-
+    // Selection highlighting
+    if (isSelected && !isFixed) {
+      baseStyle.push({ backgroundColor: colors.primary, opacity: 0.3 });
+    } else if (selectedCell) {
+      const [sRow, sCol] = selectedCell;
+      const inSameBox =
+        Math.floor(sRow / 3) === Math.floor(rowIndex / 3) &&
+        Math.floor(sCol / 3) === Math.floor(colIndex / 3);
       if (
-        highlightedNumber &&
-        cellValue === highlightedNumber &&
-        cellValue !== 0
+        !isSelected &&
+        (sRow === rowIndex || sCol === colIndex || inSameBox)
       ) {
-        style.push(styles.highlightedNumberCell);
+        baseStyle.push({ backgroundColor: colors.background });
       }
+    }
 
-      return style;
-    },
-    [
-      selectedCell,
-      initialGridMask,
-      grid,
-      errorCells,
-      highlightedNumber,
-      showErrors,
-    ]
-  );
+    // Fixed cell styling
+    if (isFixed) {
+      baseStyle.push({ backgroundColor: colors.background });
+    }
 
-  // Memoized function to get cell text styles
-  const getCellTextStyles = useCallback(
-    (rowIndex: number, colIndex: number) => {
-      const style: any[] = [styles.cellText];
-      const isFixed = initialGridMask[rowIndex]?.[colIndex];
-      const isError = errorCells.some(
-        (cell) => cell[0] === rowIndex && cell[1] === colIndex
-      );
+    // Error styling
+    if (isError && !isFixed && showErrors) {
+      baseStyle.push({ backgroundColor: colors.error, opacity: 0.3 });
+    }
 
-      if (isFixed) style.push(styles.fixedCellText);
-      else style.push(styles.userCellText);
+    // Number highlighting
+    if (
+      highlightedNumber &&
+      cellValue === highlightedNumber &&
+      cellValue !== 0
+    ) {
+      baseStyle.push({ backgroundColor: colors.accent, opacity: 0.2 });
+    }
 
-      if (isError && !isFixed && showErrors) style.push(styles.errorCellText);
+    return baseStyle;
+  };
 
-      return style;
-    },
-    [initialGridMask, errorCells, showErrors]
-  );
+  // Get cell text styles
+  const getCellTextStyles = (rowIndex: number, colIndex: number) => {
+    const baseStyle: any[] = [styles.cellText];
+    const isFixed = initialGridMask[rowIndex]?.[colIndex];
+    const isError = errorCells.some(
+      ([errorRow, errorCol]) => errorRow === rowIndex && errorCol === colIndex
+    );
+
+    if (isFixed) {
+      baseStyle.push({ color: colors.textPrimary });
+    } else {
+      baseStyle.push({ color: colors.primary });
+    }
+
+    if (isError && !isFixed && showErrors) {
+      baseStyle.push({ color: colors.error });
+    }
+
+    return baseStyle;
+  };
 
   // Handle back navigation
   const handleBack = () => {
@@ -426,11 +445,18 @@ const SudokuGame = () => {
   // Start screen UI
   if (!gameStarted) {
     return (
-      <View style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar
+          barStyle={isDarkMode ? 'light-content' : 'dark-content'}
+          backgroundColor={colors.primary}
+        />
 
-        {/* Custom Header with proper safe area */}
-        <View style={[styles.header, { paddingTop: insets.top }]}>
+        <View
+          style={[
+            styles.header,
+            { paddingTop: insets.top, backgroundColor: colors.primary },
+          ]}
+        >
           <TouchableOpacity
             onPress={() => router.back()}
             style={styles.headerButton}
@@ -448,26 +474,49 @@ const SudokuGame = () => {
 
         <SafeAreaView style={styles.contentContainer} edges={['bottom']}>
           <View style={styles.startScreenHeader}>
-            <Trophy size={60} color={COLORS.primary} />
-            <Text style={styles.gameTitle}>Sudoku Challenge</Text>
+            <Trophy size={60} color={colors.primary} />
+            <Text style={[styles.gameTitle, { color: colors.primary }]}>
+              Sudoku Challenge
+            </Text>
           </View>
 
           <ScrollView contentContainerStyle={styles.startContentScrollView}>
             <View style={styles.startContent}>
-              <Text style={styles.gameDescription}>
+              <Text
+                style={[
+                  styles.gameDescription,
+                  { color: colors.textSecondary },
+                ]}
+              >
                 Fill the 9×9 grid so that each column, row, and 3×3 subgrid
                 contains all digits from 1 to 9.
               </Text>
 
               <View style={styles.difficultyContainer}>
-                <Text style={styles.difficultyTitle}>Choose Difficulty:</Text>
+                <Text
+                  style={[
+                    styles.difficultyTitle,
+                    { color: colors.textPrimary },
+                  ]}
+                >
+                  Choose Difficulty:
+                </Text>
                 <View style={styles.difficultyButtons}>
                   {(['easy', 'medium', 'hard'] as const).map((level) => (
                     <TouchableOpacity
                       key={level}
                       style={[
                         styles.difficultyButton,
-                        difficulty === level && styles.selectedDifficultyButton,
+                        {
+                          backgroundColor: colors.surface,
+                          borderColor:
+                            difficulty === level
+                              ? colors.primary
+                              : colors.textSecondary,
+                        },
+                        difficulty === level && {
+                          backgroundColor: colors.primary,
+                        },
                       ]}
                       onPress={() => {
                         setDifficulty(level);
@@ -477,7 +526,12 @@ const SudokuGame = () => {
                       <Text
                         style={[
                           styles.difficultyText,
-                          difficulty === level && styles.selectedDifficultyText,
+                          {
+                            color:
+                              difficulty === level
+                                ? COLORS.white
+                                : colors.textPrimary,
+                          },
                         ]}
                       >
                         {level.charAt(0).toUpperCase() + level.slice(1)}
@@ -488,7 +542,7 @@ const SudokuGame = () => {
               </View>
 
               <TouchableOpacity
-                style={styles.startButton}
+                style={[styles.startButton, { backgroundColor: colors.accent }]}
                 onPress={() => {
                   setGameStarted(true);
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
@@ -505,11 +559,18 @@ const SudokuGame = () => {
 
   // Main game screen UI
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar
+        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
+        backgroundColor={colors.primary}
+      />
 
-      {/* Custom Header with proper safe area */}
-      <View style={[styles.header, { paddingTop: insets.top }]}>
+      <View
+        style={[
+          styles.header,
+          { paddingTop: insets.top, backgroundColor: colors.primary },
+        ]}
+      >
         <TouchableOpacity onPress={handleBack} style={styles.headerButton}>
           <ArrowLeft size={24} color={COLORS.white} />
         </TouchableOpacity>
@@ -534,22 +595,36 @@ const SudokuGame = () => {
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {/* Game Stats */}
           <View style={styles.gameStatsContainer}>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Time</Text>
-              <Text style={styles.statValue}>{formatTime(gameTime)}</Text>
+            <View
+              style={[styles.statItem, { backgroundColor: colors.surface }]}
+            >
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                Time
+              </Text>
+              <Text style={[styles.statValue, { color: colors.textPrimary }]}>
+                {formatTime(gameTime)}
+              </Text>
             </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Level</Text>
-              <Text style={styles.statValue}>
+            <View
+              style={[styles.statItem, { backgroundColor: colors.surface }]}
+            >
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                Level
+              </Text>
+              <Text style={[styles.statValue, { color: colors.textPrimary }]}>
                 {difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
               </Text>
             </View>
-            <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Mistakes</Text>
+            <View
+              style={[styles.statItem, { backgroundColor: colors.surface }]}
+            >
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                Mistakes
+              </Text>
               <Text
                 style={[
                   styles.statValue,
-                  { color: mistakes > 0 ? COLORS.error : COLORS.success },
+                  { color: mistakes > 0 ? colors.error : colors.success },
                 ]}
               >
                 {mistakes}/3
@@ -563,46 +638,79 @@ const SudokuGame = () => {
               onPress={handleUndo}
               style={[
                 styles.controlButton,
-                { opacity: moveHistory.length > 0 ? 1 : 0.5 },
+                {
+                  backgroundColor: colors.surface,
+                  opacity: moveHistory.length > 0 ? 1 : 0.5,
+                },
               ]}
               disabled={moveHistory.length === 0}
             >
-              <Undo2 size={20} color={COLORS.primary} />
-              <Text style={styles.controlButtonText}>Undo</Text>
+              <Undo2 size={20} color={colors.primary} />
+              <Text
+                style={[styles.controlButtonText, { color: colors.primary }]}
+              >
+                Undo
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={getHint}
               style={[
                 styles.controlButton,
-                { opacity: selectedCell && showHints ? 1 : 0.5 },
+                {
+                  backgroundColor: colors.surface,
+                  opacity: selectedCell ? 1 : 0.5,
+                },
               ]}
-              disabled={!selectedCell || !showHints}
+              disabled={!selectedCell}
             >
-              <Lightbulb size={20} color={COLORS.warning} />
-              <Text style={styles.controlButtonText}>Hint</Text>
+              <Lightbulb size={20} color={colors.warning} />
+              <Text
+                style={[styles.controlButtonText, { color: colors.warning }]}
+              >
+                Hint
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={() => setShowErrors(!showErrors)}
-              style={styles.controlButton}
+              style={[
+                styles.controlButton,
+                { backgroundColor: colors.surface },
+              ]}
             >
               {showErrors ? (
-                <Eye size={20} color={COLORS.accent} />
+                <Eye size={20} color={colors.accent} />
               ) : (
-                <EyeOff size={20} color={COLORS.gray} />
+                <EyeOff size={20} color={colors.textSecondary} />
               )}
-              <Text style={styles.controlButtonText}>Errors</Text>
+              <Text
+                style={[
+                  styles.controlButtonText,
+                  { color: showErrors ? colors.accent : colors.textSecondary },
+                ]}
+              >
+                Errors
+              </Text>
             </TouchableOpacity>
           </View>
 
           {isLoading ? (
             <View style={styles.loaderContainer}>
-              <ActivityIndicator size="large" color={COLORS.primary} />
-              <Text style={styles.loaderText}>Generating Puzzle...</Text>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text
+                style={[styles.loaderText, { color: colors.textSecondary }]}
+              >
+                Generating Puzzle...
+              </Text>
             </View>
           ) : (
-            <View style={styles.gridContainer}>
+            <View
+              style={[
+                styles.gridContainer,
+                { backgroundColor: colors.textSecondary },
+              ]}
+            >
               {grid.map((row, rowIndex) => (
                 <View key={`row-${rowIndex}`} style={styles.row}>
                   {row.map((cellValue, colIndex) => (
@@ -629,15 +737,22 @@ const SudokuGame = () => {
                   key={`num-${num}`}
                   style={[
                     styles.numberButton,
-                    highlightedNumber === num && styles.selectedNumberButton,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.textSecondary,
+                    },
+                    highlightedNumber === num && {
+                      backgroundColor: colors.primary,
+                      borderColor: colors.primary,
+                    },
                   ]}
                   onPress={() => handleNumberPress(num)}
                 >
                   <Text
                     style={[
                       styles.numberButtonText,
-                      highlightedNumber === num &&
-                        styles.selectedNumberButtonText,
+                      { color: colors.textPrimary },
+                      highlightedNumber === num && { color: COLORS.white },
                     ]}
                   >
                     {num}
@@ -645,7 +760,11 @@ const SudokuGame = () => {
                 </TouchableOpacity>
               ))}
               <TouchableOpacity
-                style={[styles.numberButton, styles.clearButton]}
+                style={[
+                  styles.numberButton,
+                  styles.clearButton,
+                  { backgroundColor: colors.error, borderColor: colors.error },
+                ]}
                 onPress={handleClearCell}
               >
                 <Text style={styles.clearButtonText}>Clear</Text>
@@ -664,19 +783,23 @@ const SudokuGame = () => {
         backdropOpacity={0.6}
         useNativeDriverForBackdrop
       >
-        <View style={styles.modalContent}>
+        <View
+          style={[styles.modalContent, { backgroundColor: colors.surface }]}
+        >
           <Trophy
             size={80}
-            color={COLORS.accent}
+            color={colors.accent}
             style={{ alignSelf: 'center' }}
           />
-          <Text style={styles.modalTitle}>Congratulations!</Text>
-          <Text style={styles.modalMessage}>
+          <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+            Congratulations!
+          </Text>
+          <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
             You solved the {difficulty} Sudoku in {formatTime(gameTime)} with{' '}
             {mistakes} mistakes!
           </Text>
           <TouchableOpacity
-            style={styles.modalButton}
+            style={[styles.modalButton, { backgroundColor: colors.primary }]}
             onPress={() => {
               setIsCongratsModalVisible(false);
               startNewGame(difficulty);
@@ -685,15 +808,17 @@ const SudokuGame = () => {
             <Text style={styles.modalButtonText}>Play Again</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.modalButton, styles.modalSecondaryButton]}
+            style={[
+              styles.modalButton,
+              styles.modalSecondaryButton,
+              { backgroundColor: colors.surface, borderColor: colors.primary },
+            ]}
             onPress={() => {
               setIsCongratsModalVisible(false);
               setGameStarted(false);
             }}
           >
-            <Text
-              style={[styles.modalButtonText, styles.modalSecondaryButtonText]}
-            >
+            <Text style={[styles.modalButtonText, { color: colors.primary }]}>
               Change Difficulty
             </Text>
           </TouchableOpacity>
@@ -707,21 +832,22 @@ const SudokuGame = () => {
 const screenWidth = Dimensions.get('window').width;
 const gridPaddingHorizontal = 16;
 const gridContainerWidth = screenWidth - gridPaddingHorizontal * 2;
-const cellSize = gridContainerWidth / 9;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: COLORS.primary,
     paddingHorizontal: 16,
     paddingBottom: 12,
-    // paddingTop will be added dynamically using insets.top
+    elevation: 4,
+    shadowColor: COLORS.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   headerButton: {
     padding: 8,
@@ -740,7 +866,6 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   scrollContent: {
     paddingHorizontal: gridPaddingHorizontal,
@@ -753,25 +878,24 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingVertical: 16,
     marginTop: 8,
+    gap: 12,
   },
   statItem: {
     alignItems: 'center',
-    backgroundColor: COLORS.lightGray,
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 12,
-    minWidth: 80,
+    flex: 1,
+    elevation: 2,
   },
   statLabel: {
     fontFamily: TYPOGRAPHY.body.fontFamily,
     fontSize: 12,
-    color: COLORS.gray,
     textTransform: 'uppercase',
   },
   statValue: {
     fontFamily: TYPOGRAPHY.emphasis.fontFamily,
     fontSize: 16,
-    color: COLORS.secondary,
     fontWeight: 'bold',
     marginTop: 2,
   },
@@ -781,20 +905,21 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingVertical: 12,
     marginBottom: 16,
+    gap: 8,
   },
   controlButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.lightGray,
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 20,
     elevation: 1,
+    flex: 1,
+    justifyContent: 'center',
   },
   controlButtonText: {
     fontFamily: TYPOGRAPHY.body.fontFamily,
     fontSize: 12,
-    color: COLORS.secondary,
     marginLeft: 4,
   },
   loaderContainer: {
@@ -803,21 +928,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 10,
-    backgroundColor: COLORS.cellBackground,
     borderRadius: 8,
   },
   loaderText: {
     marginTop: 10,
     fontSize: 16,
-    color: COLORS.textSecondary,
     fontFamily: TYPOGRAPHY.body.fontFamily,
   },
   gridContainer: {
     width: gridContainerWidth,
     height: gridContainerWidth,
     borderWidth: 2,
-    borderColor: COLORS.gridBoxLine,
-    backgroundColor: COLORS.cellBackground,
     borderRadius: 12,
     overflow: 'hidden',
     elevation: 4,
@@ -834,51 +955,13 @@ const styles = StyleSheet.create({
   cell: {
     flex: 1,
     borderWidth: 0.5,
-    borderColor: COLORS.gridLine,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.cellBackground,
   },
   cellText: {
-    fontSize: Math.max(18, cellSize * 0.55),
+    fontSize: Math.max(18, (gridContainerWidth / 9) * 0.55),
     fontFamily: TYPOGRAPHY.emphasis.fontFamily,
     fontWeight: 'bold',
-  },
-  bottomThickBorder: {
-    borderBottomWidth: 2,
-    borderBottomColor: COLORS.gridBoxLine,
-  },
-  rightThickBorder: {
-    borderRightWidth: 2,
-    borderRightColor: COLORS.gridBoxLine,
-  },
-  selectedCell: {
-    backgroundColor: COLORS.selectedCellBackground,
-  },
-  relatedCell: {
-    backgroundColor: COLORS.relatedCellBackground,
-  },
-  fixedCell: {
-    backgroundColor: COLORS.fixedCellBackground,
-  },
-  fixedCellText: {
-    color: COLORS.textFixed,
-    fontFamily: TYPOGRAPHY.heading.fontFamily,
-  },
-  userCellText: {
-    color: COLORS.textUser,
-    fontFamily: TYPOGRAPHY.emphasis.fontFamily,
-  },
-  errorCell: {
-    backgroundColor: COLORS.errorCellBackground,
-  },
-  errorCellText: {
-    color: COLORS.textError,
-    fontFamily: TYPOGRAPHY.emphasis.fontFamily,
-  },
-  highlightedNumberCell: {
-    backgroundColor: COLORS.primary,
-    opacity: 0.3,
   },
   numberPadContainer: {
     flexDirection: 'row',
@@ -892,7 +975,6 @@ const styles = StyleSheet.create({
   numberButton: {
     width: (gridContainerWidth - 40 - 4 * 12) / 5,
     aspectRatio: 1,
-    backgroundColor: COLORS.white,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
@@ -902,20 +984,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 2,
     borderWidth: 1,
-    borderColor: COLORS.lightGray,
-  },
-  selectedNumberButton: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
   },
   numberButtonText: {
     fontSize: 24,
-    color: COLORS.secondary,
     fontFamily: TYPOGRAPHY.emphasis.fontFamily,
     fontWeight: 'bold',
-  },
-  selectedNumberButtonText: {
-    color: COLORS.white,
   },
   clearButton: {
     backgroundColor: COLORS.error,
@@ -936,7 +1009,6 @@ const styles = StyleSheet.create({
   gameTitle: {
     fontFamily: TYPOGRAPHY.heading.fontFamily,
     fontSize: 32,
-    color: COLORS.primary,
     textAlign: 'center',
     marginTop: 16,
   },
@@ -951,7 +1023,6 @@ const styles = StyleSheet.create({
   gameDescription: {
     fontFamily: TYPOGRAPHY.body.fontFamily,
     fontSize: 16,
-    color: COLORS.textSecondary,
     textAlign: 'center',
     lineHeight: 24,
     marginBottom: 30,
@@ -962,7 +1033,6 @@ const styles = StyleSheet.create({
   difficultyTitle: {
     fontFamily: TYPOGRAPHY.heading.fontFamily,
     fontSize: 18,
-    color: COLORS.textPrimary,
     marginBottom: 16,
     textAlign: 'center',
   },
@@ -974,28 +1044,17 @@ const styles = StyleSheet.create({
   difficultyButton: {
     flex: 1,
     paddingVertical: 12,
-    backgroundColor: COLORS.lightGray,
     borderRadius: 20,
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: COLORS.lightGray,
-  },
-  selectedDifficultyButton: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
+    elevation: 2,
   },
   difficultyText: {
     fontFamily: TYPOGRAPHY.emphasis.fontFamily,
     fontSize: 14,
-    color: COLORS.textPrimary,
     fontWeight: '600',
   },
-  selectedDifficultyText: {
-    color: COLORS.white,
-    fontWeight: 'bold',
-  },
   startButton: {
-    backgroundColor: COLORS.accent,
     borderRadius: 25,
     paddingVertical: 16,
     alignItems: 'center',
@@ -1013,7 +1072,6 @@ const styles = StyleSheet.create({
   },
   // Modal Styles
   modalContent: {
-    backgroundColor: COLORS.white,
     padding: 30,
     borderRadius: 20,
     alignItems: 'center',
@@ -1026,7 +1084,6 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 24,
     fontFamily: TYPOGRAPHY.heading.fontFamily,
-    color: COLORS.primary,
     textAlign: 'center',
     marginTop: 16,
     marginBottom: 12,
@@ -1035,13 +1092,11 @@ const styles = StyleSheet.create({
   modalMessage: {
     fontSize: 16,
     fontFamily: TYPOGRAPHY.body.fontFamily,
-    color: COLORS.textSecondary,
     textAlign: 'center',
     marginBottom: 24,
     lineHeight: 22,
   },
   modalButton: {
-    backgroundColor: COLORS.primary,
     paddingVertical: 14,
     paddingHorizontal: 24,
     borderRadius: 12,
@@ -1056,12 +1111,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   modalSecondaryButton: {
-    backgroundColor: COLORS.lightGray,
     borderWidth: 2,
-    borderColor: COLORS.primary,
-  },
-  modalSecondaryButtonText: {
-    color: COLORS.primary,
   },
 });
 

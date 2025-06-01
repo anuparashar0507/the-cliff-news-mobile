@@ -139,11 +139,9 @@ export default function SplashScreenComponent() {
   const secondaryTextColor = isDark ? COLORS.gray : COLORS.gray; // Subtitle color
 
   // Logo selection (same logic as before, adjust based on your actual logo designs)
-  // Assuming 10x10_DARK.jpg is for light backgrounds (has light text/elements)
-  // Assuming 10x10_WHITW.jpg is for dark backgrounds (has dark text/elements)
   const logoSource = isDark
-    ? require('@/assets/images/10x10_WHITW.png') // Use the logo that looks good on a dark background
-    : require('@/assets/images/10x10_DARK.png'); // Use the logo that looks good on a light background
+    ? require('@/assets/images/dark-logo-sqaure.png') // Use the logo that looks good on a dark background
+    : require('@/assets/images/light-logo-sqaure.png'); // Use the logo that looks good on a light background
 
   // Color for the pulsing bar, from web example 'bg-cliff-orange'
   const pulseBarColor = COLORS.primary; // Your theme's primary orange/yellow
