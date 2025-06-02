@@ -26,7 +26,8 @@ module.exports = {
         },
       },
       entitlements: {
-        'aps-environment': 'development',
+        'aps-environment':
+          process.env.APP_ENV === 'production' ? 'production' : 'development',
         'com.apple.security.application-groups': [
           'group.com.thecliff.news.onesignal',
         ],

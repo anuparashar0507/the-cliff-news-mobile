@@ -14,7 +14,11 @@
         "simulator": true
       }
     },
-    "production": {}
+    "production": {
+      "env": {
+        "APP_ENV": "production"
+      }
+    }
   },
   "submit": {
     "production": {}
