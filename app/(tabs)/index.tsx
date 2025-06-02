@@ -1,29 +1,24 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { StyleSheet, View, Platform, Alert } from 'react-native';
+// Fixed category navigation with better WebView handling
+// Replace your current home screen with this:
+
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  useMemo,
+  useCallback,
+} from 'react';
+import { StyleSheet, View, Platform } from 'react-native';
 import { WebView, WebViewNavigation } from 'react-native-webview';
-import { useCallback } from 'react';
-import { COLORS } from '@/constants/Theme';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import WebViewError from '@/components/WebViewError';
 import WebViewLoading from '@/components/WebViewLoading';
 import OfflineMessage from '@/components/OfflineMessage';
 import MobileAppHeader from '@/components/MobileAppHeader';
+import CategoryNavigationHeader from '@/components/CategoryNavigationHeader';
 import { useAppContext } from '@/context/AppContext';
 import Animated, { useSharedValue } from 'react-native-reanimated';
-import Constants from 'expo-constants';
-
-// FIXED: Check if we're in Expo Go
-const isExpoGo = Constants.appOwnership === 'expo';
-
-// Conditionally import OneSignal
-let OneSignal: any = null;
-if (!isExpoGo && Platform.OS !== 'web') {
-  try {
-    OneSignal = require('react-native-onesignal').OneSignal;
-  } catch (error) {
-    console.log('OneSignal not available in Expo Go');
-  }
-}
+import { COLORS } from '@/constants/Theme';
 
 const HOME_URL = 'https://thecliffnews.in/';
 
@@ -32,15 +27,20 @@ export default function HomeScreen() {
   const [hasError, setHasError] = useState(false);
   const [currentTitle, setCurrentTitle] = useState('THE CLIFF NEWS');
   const [isArticlePage, setIsArticlePage] = useState(false);
+  const [currentCategory, setCurrentCategory] = useState('home');
+  const [hasLiveNews, setHasLiveNews] = useState(false);
+  const [loadStartTime, setLoadStartTime] = useState<number>(0);
+  const [webViewKey, setWebViewKey] = useState(0);
+  const [navigationHistory, setNavigationHistory] = useState<string[]>([
+    HOME_URL,
+  ]);
+
   const webViewRef = useRef<WebView>(null);
+  const loadingTimeoutRef = useRef<number | null>(null);
   const router = useRouter();
   const params = useLocalSearchParams<{ urlToLoad?: string }>();
-  const {
-    requestNotificationPermission,
-    loadUrl,
-    isConnected,
-    isExpoGo: contextIsExpoGo,
-  } = useAppContext();
+  const { requestNotificationPermission, loadUrl, isConnected } =
+    useAppContext();
   const [currentUrl, setCurrentUrl] = useState(
     params.urlToLoad || loadUrl || HOME_URL
   );
@@ -49,278 +49,593 @@ export default function HomeScreen() {
   const detectPageType = (url: string, title?: string) => {
     const isHome =
       url === HOME_URL || (url.endsWith('/') && !url.includes('/index.php/'));
-    const isArticle = url.includes('/index.php/') && url !== HOME_URL;
+    const isArticle =
+      url.includes('/index.php/') &&
+      url !== HOME_URL &&
+      !url.includes('/category/');
+    const isCategoryPage = url.includes('/category/') && !isArticle;
 
     setIsArticlePage(isArticle);
     setCurrentTitle(isArticle && title ? title : 'THE CLIFF NEWS');
+    updateCurrentCategory(url);
+
+    // Update navigation history
+    setNavigationHistory((prev) => {
+      const newHistory = [...prev];
+      if (newHistory[newHistory.length - 1] !== url) {
+        newHistory.push(url);
+        // Keep only last 10 URLs to prevent memory issues
+        if (newHistory.length > 10) {
+          newHistory.shift();
+        }
+      }
+      return newHistory;
+    });
+
+    console.log('📄 Page type detection:', {
+      url,
+      isHome,
+      isArticle,
+      isCategoryPage,
+    });
+    return { isHome, isArticle, isCategoryPage };
   };
 
-  // FIXED: Simplified injected JavaScript without problematic properties
+  const updateCurrentCategory = (url: string) => {
+    const normalizedUrl = url.toLowerCase().replace(/\/$/, '');
+    let newCategory = 'home';
 
-  const injectedJavaScript = `
-  (function() {
-    console.log('Enhanced Mobile WebView Script Loaded');
-    
-    function applyTheme(isDark) {
-      const themeMode = isDark ? 'dark' : 'light';
-      
-      try {
-        localStorage.setItem('themeMode', themeMode);
-      } catch (e) {
-        console.log('Could not save theme to localStorage:', e);
-      }
-      
-      let themeStyleId = 'rn-theme-styles';
-      let existingThemeStyle = document.getElementById(themeStyleId);
-      if (existingThemeStyle) {
-        existingThemeStyle.remove();
-      }
-      
-      const themeStyles = document.createElement('style');
-      themeStyles.id = themeStyleId;
-      themeStyles.textContent = \`
-        :root {
-          --theme-bg: \${isDark ? '#0F0F0F' : '#FFFFFF'};
-          --theme-surface: \${isDark ? '#1A1A1A' : '#FFFFFF'};
-          --theme-text: \${isDark ? '#FFFFFF' : '#1F2937'};
-          --theme-text-secondary: \${isDark ? '#B0B0B0' : '#6B7280'};
-          --theme-border: \${isDark ? '#333333' : '#E5E7EB'};
-        }
-        
-      \`;
-      document.head.appendChild(themeStyles);
+    if (
+      normalizedUrl === 'https://thecliffnews.in' ||
+      normalizedUrl.endsWith('thecliffnews.in')
+    ) {
+      newCategory = 'home';
+    } else if (normalizedUrl.includes('/category/national')) {
+      newCategory = 'national';
+    } else if (normalizedUrl.includes('/category/state')) {
+      newCategory = 'state';
+    } else if (normalizedUrl.includes('/category/entertainment')) {
+      newCategory = 'entertainment';
+    } else if (normalizedUrl.includes('/category/sports')) {
+      newCategory = 'sports';
+    } else if (normalizedUrl.includes('/category/technology')) {
+      newCategory = 'technology';
+    } else if (normalizedUrl.includes('/category/travel')) {
+      newCategory = 'travel';
+    } else if (normalizedUrl.includes('/category/stock-market')) {
+      newCategory = 'stock';
+    } else if (normalizedUrl.includes('/category/nit')) {
+      newCategory = 'nit';
+    } else if (normalizedUrl.includes('/category/do-it-yourself')) {
+      newCategory = 'diy';
     }
-    
-    function optimizeForMobile() {
-      // Only hide navigation elements
-      const elementsToHide = [
-        '#masthead', '.site-header', 'header.site-header',
-        '#wpadminbar', '.top-header', '.main-header', 
-        '#site-navigation', '.main-navigation',
-        '.ticker-item-wrap', '.top-ticker-news'
-      ];
-      
-      elementsToHide.forEach(selector => {
-        const element = document.querySelector(selector);
-        if (element) {
-          element.style.display = 'none';
-        }
-      });
-      
-      if (!document.getElementById('mobile-app-styles')) {
-        const mobileStyles = document.createElement('style');
-        mobileStyles.id = 'mobile-app-styles';
-        mobileStyles.textContent = \`
-          body {
-            font-size: 16px !important;
-            line-height: 1.6 !important;
-            padding-top: 0 !important;
-            margin-top: 0 !important;
-          }
-          .site-content {
-            padding-top: 0 !important;
-            margin-top: 0 !important;
-          }
-          article {
-            padding: 0px !important;
-            margin-bottom: 20px !important;
-          }
-          .entry-title, h1 {
-            font-size: 24px !important;
-            margin-bottom: 15px !important;
-            line-height: 1.3 !important;
-          }
-        \`;
-        document.head.appendChild(mobileStyles);
-      }
-    }
-    
-    function initializeTheme() {
-      let savedTheme = null;
-      try {
-        savedTheme = localStorage.getItem('themeMode');
-      } catch (e) {
-        console.log('Could not read theme from localStorage:', e);
-      }
-      
-      const isDark = savedTheme === 'dark';
-      applyTheme(isDark);
-    }
-    
-    optimizeForMobile();
-    initializeTheme();
-    
-    // Theme change listener
-    window.addEventListener('message', (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'THEME_CHANGE') {
-          applyTheme(data.isDark);
-        }
-      } catch (e) {
-        // Not a valid JSON message, ignore
-      }
+
+    console.log('🏷️ Category update:', {
+      url: normalizedUrl,
+      oldCategory: currentCategory,
+      newCategory,
     });
-    
-    window.applyTheme = applyTheme;
-    
-    // Rest of your existing WebView functionality...
-    const observer = new MutationObserver(() => {
-      optimizeForMobile();
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-    
-    function sendPageInfo() {
-      const title = document.querySelector('h1.entry-title, .entry-title h1, h1')?.textContent?.trim();
-      const category = document.querySelector('.cat-links a, .category a')?.textContent?.trim();
-      const isArticle = window.location.href.includes('/index.php/') && 
-                       window.location.href !== '${HOME_URL}';
+    setCurrentCategory(newCategory);
+  };
+
+  // Simplified injected JavaScript with better content detection
+  const injectedJavaScript = useMemo(
+    () => `
+    (function() {
+      let scrollTimeout;
+      let contentCheckAttempts = 0;
+      const maxContentCheckAttempts = 20; // 10 seconds total
       
-      if (window.ReactNativeWebView) {
-        window.ReactNativeWebView.postMessage(JSON.stringify({
-          type: 'PAGE_INFO',
-          title: title || 'THE CLIFF NEWS',
-          category: category || 'News',
-          url: window.location.href,
-          isArticle: isArticle
+      console.log('WebView script initialized for:', window.location.href);
+      
+      // Mobile optimizations
+      function optimizeForMobile() {
+        try {
+          // Hide navigation elements
+          const hideSelectors = [
+            '#masthead', '.site-header', 'header.site-header', 
+            '#wpadminbar', '.top-header', '.main-header', 
+            '#site-navigation', '.main-navigation',
+            '.ticker-item-wrap', '.top-ticker-news'
+          ];
+          
+          hideSelectors.forEach(selector => {
+            const elements = document.querySelectorAll(selector);
+            elements.forEach(el => {
+              if (el) el.style.display = 'none';
+            });
+          });
+          
+          // Add mobile styles
+          if (!document.getElementById('mobile-styles')) {
+            const style = document.createElement('style');
+            style.id = 'mobile-styles';
+            style.textContent = \`
+              body {
+                padding-top: 0 !important;
+                margin-top: 0 !important;
+                font-size: 16px !important;
+                line-height: 1.6 !important;
+              }
+              .site-content {
+                padding-top: 0 !important;
+                margin-top: 0 !important;
+              }
+              article {
+                padding: 10px !important;
+                margin-bottom: 20px !important;
+              }
+              .entry-title, h1, h2 {
+                font-size: 24px !important;
+                margin-bottom: 15px !important;
+                line-height: 1.3 !important;
+              }
+              img {
+                max-width: 100% !important;
+                height: auto !important;
+              }
+            \`;
+            document.head.appendChild(style);
+          }
+        } catch (e) {
+          console.log('Mobile optimization error:', e);
+        }
+      }
+      
+      // Enhanced content detection
+      function checkForContent() {
+        try {
+          contentCheckAttempts++;
+          
+          // Look for various content indicators
+          const contentSelectors = [
+            'article',
+            '.entry-content', 
+            '.post-content',
+            '.content-area',
+            'main',
+            '.site-main',
+            '.posts-container',
+            '.post',
+            '.entry',
+            '[class*="content"]'
+          ];
+          
+          let hasContent = false;
+          let contentElement = null;
+          
+          for (const selector of contentSelectors) {
+            contentElement = document.querySelector(selector);
+            if (contentElement && contentElement.textContent.trim().length > 100) {
+              hasContent = true;
+              break;
+            }
+          }
+          
+          // Additional checks
+          if (!hasContent) {
+            // Check for headlines/titles
+            const headlines = document.querySelectorAll('h1, h2, h3, .entry-title, .post-title, [class*="title"]');
+            hasContent = headlines.length > 0;
+          }
+          
+          if (!hasContent) {
+            // Check for images
+            const images = document.querySelectorAll('img');
+            hasContent = images.length > 2; // More than just logo/icons
+          }
+          
+          if (!hasContent) {
+            // Check total text content
+            const bodyText = document.body.textContent.trim();
+            hasContent = bodyText.length > 1000 && !bodyText.toLowerCase().includes('loading');
+          }
+          
+          console.log('Content check attempt', contentCheckAttempts, 'hasContent:', hasContent);
+          
+          if (hasContent) {
+            console.log('Content detected! Notifying React Native...');
+            window.ReactNativeWebView?.postMessage(JSON.stringify({
+              type: 'CONTENT_READY',
+              url: window.location.href,
+              contentFound: true,
+              attempts: contentCheckAttempts
+            }));
+            return true;
+          } else if (contentCheckAttempts >= maxContentCheckAttempts) {
+            console.log('Max content check attempts reached, forcing content ready');
+            window.ReactNativeWebView?.postMessage(JSON.stringify({
+              type: 'CONTENT_READY',
+              url: window.location.href,
+              contentFound: false,
+              forced: true,
+              attempts: contentCheckAttempts
+            }));
+            return true;
+          }
+          
+          return false;
+        } catch (e) {
+          console.log('Content check error:', e);
+          return false;
+        }
+      }
+      
+      // Scroll handling
+      function handleScroll() {
+        const y = window.pageYOffset || document.documentElement.scrollTop;
+        window.ReactNativeWebView?.postMessage(JSON.stringify({
+          type: 'SCROLL_EVENT',
+          scrollY: y
         }));
       }
+      
+      // Initialize everything
+      function initialize() {
+        console.log('Initializing WebView for:', window.location.href);
+        optimizeForMobile();
+        
+        // Start content checking
+        if (!checkForContent()) {
+          // Check periodically
+          const contentInterval = setInterval(() => {
+            if (checkForContent()) {
+              clearInterval(contentInterval);
+            }
+          }, 500);
+          
+          // Stop after max attempts
+          setTimeout(() => {
+            clearInterval(contentInterval);
+          }, maxContentCheckAttempts * 500);
+        }
+        
+        // Send page info
+        setTimeout(() => {
+          const title = document.querySelector('h1, .entry-title, .page-title')?.textContent?.trim();
+          window.ReactNativeWebView?.postMessage(JSON.stringify({
+            type: 'PAGE_INFO',
+            title: title || 'THE CLIFF NEWS',
+            url: window.location.href
+          }));
+        }, 1000);
+      }
+      
+      // Event listeners
+      window.addEventListener('scroll', () => {
+        clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(handleScroll, 100);
+      }, { passive: true });
+      
+      // Initialize when ready
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initialize);
+      } else {
+        initialize();
+      }
+      
+      // Also try on window load
+      window.addEventListener('load', () => {
+        setTimeout(initialize, 500);
+      });
+      
+    })();
+    true;
+  `,
+    []
+  );
+
+  // Loading handlers
+  const handleLoadStart = useCallback(() => {
+    console.log('🚀 Load started for:', currentUrl);
+    setLoadStartTime(Date.now());
+    setIsLoading(true);
+    setHasError(false);
+
+    // Clear any existing timeout
+    if (loadingTimeoutRef.current) {
+      clearTimeout(loadingTimeoutRef.current);
     }
-    
-    if (document.readyState === 'complete') {
-      sendPageInfo();
+
+    // Set timeout (20 seconds)
+    loadingTimeoutRef.current = setTimeout(() => {
+      console.log('⏰ Loading timeout - showing error');
+      setHasError(true);
+      setIsLoading(false);
+    }, 20000);
+  }, [currentUrl]);
+
+  const handleLoadEnd = useCallback(() => {
+    const loadTime = Date.now() - loadStartTime;
+    console.log(`📄 Load end - ${loadTime}ms`);
+
+    // Clear timeout
+    if (loadingTimeoutRef.current) {
+      clearTimeout(loadingTimeoutRef.current);
+      loadingTimeoutRef.current = null;
+    }
+
+    // Don't hide loading immediately - wait for content detection
+    // But set a fallback in case content detection fails
+    setTimeout(() => {
+      if (isLoading) {
+        console.log('📄 Fallback: Hiding loading after load end timeout');
+        setIsLoading(false);
+      }
+    }, 3000); // 3 second fallback
+  }, [loadStartTime, isLoading]);
+
+  const handleError = useCallback((syntheticEvent: any) => {
+    const { nativeEvent } = syntheticEvent;
+    console.warn('❌ WebView error:', nativeEvent);
+
+    if (loadingTimeoutRef.current) {
+      clearTimeout(loadingTimeoutRef.current);
+      loadingTimeoutRef.current = null;
+    }
+
+    setIsLoading(false);
+    setHasError(true);
+  }, []);
+
+  const handleWebViewMessage = useCallback(
+    (event: any) => {
+      try {
+        const data = JSON.parse(event.nativeEvent.data);
+
+        switch (data.type) {
+          case 'CONTENT_READY':
+            console.log('🎉 Content ready!', data);
+            // Hide loading immediately when content is detected
+            setIsLoading(false);
+            break;
+
+          case 'PAGE_INFO':
+            console.log('📄 Page info:', data);
+            detectPageType(data.url, data.title);
+            setCurrentTitle(data.title);
+            break;
+
+          case 'SCROLL_EVENT':
+            scrollY.value = data.scrollY;
+            break;
+        }
+      } catch (error) {
+        // Ignore invalid JSON
+      }
+    },
+    [scrollY]
+  );
+
+  // Improved category navigation
+  const handleCategoryPress = useCallback(
+    (url: string, title: string) => {
+      if (url === currentUrl) {
+        console.log('🔄 Same URL clicked, refreshing...');
+        webViewRef.current?.reload();
+        return;
+      }
+
+      console.log('🔗 Navigating to category:', title, 'URL:', url);
+
+      // Update state immediately
+      setCurrentTitle(title);
+      setCurrentUrl(url);
+
+      // Add to navigation history
+      setNavigationHistory((prev) => {
+        const newHistory = [...prev];
+        if (newHistory[newHistory.length - 1] !== url) {
+          newHistory.push(url);
+          if (newHistory.length > 10) {
+            newHistory.shift();
+          }
+        }
+        return newHistory;
+      });
+
+      // Force WebView refresh with new key
+      setWebViewKey((prev) => prev + 1);
+    },
+    [currentUrl]
+  );
+
+  const handleReload = useCallback(() => {
+    console.log('🔄 Manual reload');
+    setIsLoading(true);
+    setHasError(false);
+    setWebViewKey((prev) => prev + 1);
+  }, []);
+
+  const onNavigationStateChange = useCallback(
+    (navState: WebViewNavigation) => {
+      console.log('🌐 Navigation state:', navState.url);
+
+      if (navState.url && navState.url !== currentUrl) {
+        setCurrentUrl(navState.url);
+        detectPageType(navState.url, navState.title);
+      }
+    },
+    [currentUrl]
+  );
+
+  const handleBackPress = useCallback(() => {
+    console.log('🔙 Back pressed, navigation history:', navigationHistory);
+
+    if (navigationHistory.length > 1) {
+      // Go to previous URL in our history
+      const newHistory = [...navigationHistory];
+      newHistory.pop(); // Remove current URL
+      const previousUrl = newHistory[newHistory.length - 1];
+
+      console.log('🔙 Going back to:', previousUrl);
+
+      // Update everything IMMEDIATELY and SYNCHRONOUSLY
+      const newCategory = getCurrentCategoryFromUrl(previousUrl);
+      console.log('🎯 Immediately setting category to:', newCategory);
+
+      // Update all states immediately - DO NOT set isBackNavigation flag
+      setNavigationHistory(newHistory);
+      setCurrentUrl(previousUrl);
+      setCurrentCategory(newCategory); // Set category IMMEDIATELY
+
+      // Set title based on category
+      if (newCategory === 'home') {
+        setCurrentTitle('THE CLIFF NEWS');
+      } else if (newCategory === 'national') {
+        setCurrentTitle('National News');
+      } else if (newCategory === 'state') {
+        setCurrentTitle('State News');
+      } else if (newCategory === 'entertainment') {
+        setCurrentTitle('Entertainment');
+      } else if (newCategory === 'sports') {
+        setCurrentTitle('Sports');
+      } else if (newCategory === 'technology') {
+        setCurrentTitle('Technology');
+      } else if (newCategory === 'travel') {
+        setCurrentTitle('Travel');
+      } else if (newCategory === 'stock') {
+        setCurrentTitle('Stock Market');
+      } else if (newCategory === 'nit') {
+        setCurrentTitle('NIT');
+      } else if (newCategory === 'diy') {
+        setCurrentTitle('DIY');
+      } else {
+        setCurrentTitle('THE CLIFF NEWS');
+      }
+
+      console.log('🔄 Back navigation complete:', {
+        url: previousUrl,
+        category: newCategory,
+        title: newCategory === 'national' ? 'National News' : 'Other',
+      });
+
+      // Force WebView refresh AFTER state is updated
+      setWebViewKey((prev) => prev + 1);
     } else {
-      window.addEventListener('load', sendPageInfo);
+      // No history, try WebView back or go to home
+      if (webViewRef.current) {
+        webViewRef.current.goBack();
+      } else {
+        handleHomePress();
+      }
     }
-    
-    setInterval(optimizeForMobile, 3000);
-    
-  })();
-  true;
-`;
+  }, [navigationHistory]);
+
+  // Helper function to get category from URL
+  const getCurrentCategoryFromUrl = (url: string) => {
+    if (
+      url === HOME_URL ||
+      (url.endsWith('/') && !url.includes('/index.php/'))
+    ) {
+      return 'home';
+    } else if (url.includes('/category/national')) {
+      return 'national';
+    } else if (url.includes('/category/state')) {
+      return 'state';
+    } else if (url.includes('/category/entertainment')) {
+      return 'entertainment';
+    } else if (url.includes('/category/sports')) {
+      return 'sports';
+    } else if (url.includes('/category/technology')) {
+      return 'technology';
+    } else if (url.includes('/category/travel')) {
+      return 'travel';
+    } else if (url.includes('/category/stock-market')) {
+      return 'stock';
+    } else if (url.includes('/category/nit')) {
+      return 'nit';
+    } else if (url.includes('/category/do-it-yourself')) {
+      return 'diy';
+    }
+    return 'home';
+  };
+
+  const handleHomePress = useCallback(() => {
+    handleCategoryPress(HOME_URL, 'THE CLIFF NEWS');
+    setCurrentCategory('home');
+    setNavigationHistory([HOME_URL]); // Reset history when going home
+  }, [handleCategoryPress]);
+
+  // Effects
+  useEffect(() => {
+    const timer = setTimeout(requestNotificationPermission, 3000);
+    return () => clearTimeout(timer);
+  }, [requestNotificationPermission]);
+
+  // Ensure category is updated when URL changes
+  useEffect(() => {
+    console.log('🔗 URL changed, updating category:', currentUrl);
+    updateCurrentCategory(currentUrl);
+  }, [currentUrl]);
 
   useEffect(() => {
-    if (loadUrl) {
+    if (loadUrl && loadUrl !== currentUrl) {
       setCurrentUrl(loadUrl);
+      setWebViewKey((prev) => prev + 1);
     }
-  }, [loadUrl]);
+  }, [loadUrl, currentUrl]);
 
   useEffect(() => {
     if (params.urlToLoad && params.urlToLoad !== currentUrl) {
       setCurrentUrl(params.urlToLoad);
+      setWebViewKey((prev) => prev + 1);
     }
-  }, [params.urlToLoad]);
+  }, [params.urlToLoad, currentUrl]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      requestNotificationPermission();
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  const handleLoadStart = () => {
-    setIsLoading(true);
-    setHasError(false);
-  };
-
-  const handleLoadEnd = () => {
-    setIsLoading(false);
-  };
-
-  const handleError = (syntheticEvent: any) => {
-    const { nativeEvent } = syntheticEvent;
-    console.warn('WebView error: ', nativeEvent);
-    setIsLoading(false);
-    setHasError(true);
-  };
-
-  const handleReload = useCallback(() => {
-    setHasError(false);
-    setIsLoading(true);
-    webViewRef.current?.reload();
-  }, []);
-
-  const onNavigationStateChange = (navState: WebViewNavigation) => {
-    setCurrentUrl(navState.url);
-    detectPageType(navState.url, navState.title);
-
-    // FIXED: Only use OneSignal if available (not in Expo Go)
-    if (OneSignal && !isExpoGo) {
-      try {
-        OneSignal.User.addTag('last_visited_page', navState.url);
-      } catch (error) {
-        console.log('OneSignal error:', error);
+    return () => {
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
       }
-    }
-  };
-
-  const handleWebViewMessage = (event: any) => {
-    try {
-      const data = JSON.parse(event.nativeEvent.data);
-
-      switch (data.type) {
-        case 'PAGE_INFO':
-          detectPageType(data.url, data.title);
-          setCurrentTitle(data.title);
-          break;
-
-        case 'ARTICLE_VIEW':
-          if (OneSignal && !isExpoGo && data.title) {
-            try {
-              OneSignal.User.addTags({
-                last_article_title: data.title,
-                last_article_category: data.category || 'Uncategorized',
-                last_article_timestamp: new Date().toISOString(),
-                last_article_url: data.url || currentUrl,
-              });
-            } catch (error) {
-              console.log('OneSignal error:', error);
-            }
-          }
-          break;
-
-        case 'SCROLL_EVENT':
-          scrollY.value = data.scrollY;
-          break;
-
-        case 'ONESIGNAL_PERMISSION_REQUEST':
-          requestNotificationPermission();
-          break;
-
-        default:
-          break;
-      }
-    } catch (error) {
-      // Not a JSON message, ignore
-    }
-  };
-
-  const handleBackPress = () => {
-    if (webViewRef.current) {
-      webViewRef.current.goBack();
-    }
-  };
-
-  const handleHomePress = () => {
-    setCurrentUrl(HOME_URL);
-    webViewRef.current?.reload();
-  };
+    };
+  }, []);
 
   if (!isConnected) {
     return <OfflineMessage />;
   }
 
+  // Determine what to show based on current page type
+  const isHome =
+    currentUrl === HOME_URL ||
+    (currentUrl.endsWith('/') && !currentUrl.includes('/index.php/'));
+  const isCategoryPage = currentUrl.includes('/category/') && !isArticlePage;
+  const shouldShowCategoryHeader = isHome || isCategoryPage; // Only show on home and category pages
+  const shouldShowBackButton =
+    !isHome && (navigationHistory.length > 1 || isArticlePage); // Never show on home
+  const shouldShowHomeButton = !isHome; // Show everywhere except home
+
+  console.log('🎯 Navigation state:', {
+    isHome,
+    isCategoryPage,
+    isArticlePage,
+    shouldShowCategoryHeader,
+    shouldShowBackButton,
+    currentUrl,
+    currentCategory,
+  });
+
   return (
     <View style={styles.container}>
       <MobileAppHeader
         title={currentTitle}
-        showBackButton={isArticlePage}
-        showHomeButton={isArticlePage}
+        showBackButton={shouldShowBackButton}
+        showHomeButton={shouldShowHomeButton}
         onRefreshPress={handleReload}
         onBackPress={handleBackPress}
         onHomePress={handleHomePress}
         scrollY={scrollY}
       />
+
+      {/* Only show category header on home and category pages */}
+      {shouldShowCategoryHeader && (
+        <CategoryNavigationHeader
+          key={`category-nav-${currentCategory}`} // Force re-render when category changes
+          onCategoryPress={handleCategoryPress}
+          scrollY={scrollY}
+          activeCategory={currentCategory}
+        />
+      )}
 
       {hasError ? (
         <WebViewError onReload={handleReload} />
@@ -328,6 +643,7 @@ export default function HomeScreen() {
         <>
           <WebView
             ref={webViewRef}
+            key={`webview-${webViewKey}`} // Force refresh on key change
             source={{ uri: currentUrl }}
             style={styles.webview}
             onLoadStart={handleLoadStart}
@@ -336,19 +652,24 @@ export default function HomeScreen() {
             onNavigationStateChange={onNavigationStateChange}
             injectedJavaScript={injectedJavaScript}
             onMessage={handleWebViewMessage}
+            // Configuration
             javaScriptEnabled={true}
             domStorageEnabled={true}
             sharedCookiesEnabled={true}
             allowsInlineMediaPlayback={true}
-            mediaPlaybackRequiresUserAction={Platform.OS !== 'android'}
             pullToRefreshEnabled={true}
             applicationNameForUserAgent="TheCliffNewsApp/1.0"
             showsVerticalScrollIndicator={false}
             showsHorizontalScrollIndicator={false}
-            bounces={true}
-            scrollEnabled={true}
-            nestedScrollEnabled={true}
-            // FIXED: Removed all problematic properties like decelerationRate
+            // Performance
+            cacheEnabled={false} // Disable cache for category navigation
+            allowsBackForwardNavigationGestures={true}
+            allowsLinkPreview={false}
+            // Force new page load
+            incognito={false}
+            {...(Platform.OS === 'android' && {
+              mixedContentMode: 'compatibility',
+            })}
           />
           {isLoading && <WebViewLoading />}
         </>
