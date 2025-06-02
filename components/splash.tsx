@@ -117,11 +117,11 @@ export default function SplashScreenComponent() {
         <Image source={logoSource} style={styles.logo} resizeMode="contain" />
       </Animated.View>
 
-      <Animated.Text
+      {/* <Animated.Text
         style={[styles.title, { color: primaryTextColor }, animatedTitleStyle]}
       >
         THE CLIFF NEWS
-      </Animated.Text>
+      </Animated.Text> */}
 
       <Animated.View
         style={[styles.bottomContainer, animatedBottomContentStyle]}
@@ -156,8 +156,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logo: {
-    width: 150,
-    height: 150,
+    width: 180,
+    height: 180,
   },
   title: {
     fontFamily: TYPOGRAPHY.heading.fontFamily,
