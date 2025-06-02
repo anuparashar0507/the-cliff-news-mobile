@@ -391,7 +391,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     zIndex: 999,
     elevation: 4,
-    shadowColor: COLORS.black,
+    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,

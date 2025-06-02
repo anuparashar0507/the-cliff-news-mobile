@@ -8,11 +8,6 @@ module.exports = {
     scheme: 'thecliffnews',
     userInterfaceStyle: 'automatic',
     assetBundlePatterns: ['**/*'],
-    splash: {
-      image: './assets/images/splash.png',
-      resizeMode: 'contain',
-      backgroundColor: '#ffffff',
-    },
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.thecliff.news',
@@ -61,6 +56,8 @@ module.exports = {
       'expo-font',
       'expo-web-browser',
       'expo-splash-screen',
+      '@config-plugins/react-native-blob-util',
+      '@config-plugins/react-native-pdf',
       [
         'expo-build-properties',
         {

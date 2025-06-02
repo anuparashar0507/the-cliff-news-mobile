@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  Platform,
   StatusBar,
   Share,
   BackHandler,
@@ -22,14 +23,18 @@ import {
   ArrowLeft,
   Home,
   Share2,
+  ZoomIn,
+  ZoomOut,
   ChevronLeft,
   ChevronRight,
   MoreVertical,
   Sun,
   Moon,
+  RotateCcw,
   Bookmark,
   X,
   FileText,
+  RefreshCw,
 } from 'lucide-react-native';
 import { getBookById, EBook } from '@/utils/ebooksdata';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -44,6 +49,12 @@ import * as Haptics from 'expo-haptics';
 
 const { width, height } = Dimensions.get('window');
 
+interface ReaderSettings {
+  fontSize: number;
+  nightMode: boolean;
+  pageTransition: 'smooth' | 'instant';
+}
+
 const PDFReaderScreen = () => {
   const router = useRouter();
   const { bookId } = useLocalSearchParams<{ bookId: string }>();
@@ -51,13 +62,20 @@ const PDFReaderScreen = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
+  const [scale, setScale] = useState(1.0);
   const [showControls, setShowControls] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [bookmarks, setBookmarks] = useState<number[]>([]);
-  const [pdfUri, setPdfUri] = useState<string | null>(null);
+  const [pdfSource, setPdfSource] = useState<any>(null);
+  const [hasError, setHasError] = useState(false);
+  const [readerSettings, setReaderSettings] = useState<ReaderSettings>({
+    fontSize: 16,
+    nightMode: false,
+    pageTransition: 'smooth',
+  });
 
   const { isDarkMode, colors, toggleTheme } = useTheme();
-  const pdfRef = useRef<Pdf>(null);
+  const pdfRef = useRef<any>(null);
   const hideControlsTimer = useRef<number>(0);
 
   // Handle hardware back button on Android
@@ -77,13 +95,16 @@ const PDFReaderScreen = () => {
   );
 
   useEffect(() => {
+    console.log('PDFReaderScreen mounted with bookId:', bookId);
     if (bookId) {
       const foundBook = getBookById(bookId);
       if (foundBook) {
+        console.log('Book found:', foundBook.title);
         setBook(foundBook);
         loadPdfAsset(foundBook);
         loadReaderData();
       } else {
+        console.error('Book not found for ID:', bookId);
         Alert.alert('Error', 'Book not found', [
           { text: 'OK', onPress: () => handleClose() },
         ]);
@@ -91,55 +112,40 @@ const PDFReaderScreen = () => {
     }
   }, [bookId]);
 
-  useEffect(() => {
-    // Auto-hide controls after 4 seconds
-    if (showControls) {
-      if (hideControlsTimer.current) {
-        clearTimeout(hideControlsTimer.current);
-      }
-      hideControlsTimer.current = setTimeout(() => {
-        setShowControls(false);
-      }, 4000);
-    }
-    return () => {
-      if (hideControlsTimer.current) {
-        clearTimeout(hideControlsTimer.current);
-      }
-    };
-  }, [showControls]);
-
   const loadPdfAsset = async (book: EBook) => {
     try {
       setIsLoading(true);
+      setHasError(false);
       console.log('Loading PDF asset for book:', book.title);
 
-      // Get the asset and copy it to a readable location
+      // Get the asset
       const asset = Asset.fromModule(book.pdfPath);
       await asset.downloadAsync();
-      console.log('Asset downloaded:', asset.localUri);
+      console.log('Asset downloaded successfully');
 
-      // Copy to document directory for react-native-pdf
-      const localUri = `${FileSystem.documentDirectory}${book.id}.pdf`;
-      console.log('Target local URI:', localUri);
-
-      // Check if already copied
-      const fileInfo = await FileSystem.getInfoAsync(localUri);
-      if (!fileInfo.exists) {
-        console.log('Copying file to local directory...');
-        await FileSystem.copyAsync({
-          from: asset.localUri || asset.uri,
-          to: localUri,
-        });
+      // For react-native-pdf, we can use the asset directly
+      if (asset.localUri) {
+        console.log('Setting PDF source:', asset.localUri);
+        setPdfSource({ uri: asset.localUri, cache: true });
+      } else if (asset.uri) {
+        console.log('Setting PDF source from uri:', asset.uri);
+        setPdfSource({ uri: asset.uri, cache: true });
+      } else {
+        // Fallback: try to use the module directly
+        console.log('Using module directly as source');
+        setPdfSource(book.pdfPath);
       }
-
-      console.log('PDF file ready at:', localUri);
-      setPdfUri(localUri);
     } catch (error) {
       console.error('Error loading PDF:', error);
+      setHasError(true);
+      setIsLoading(false);
       Alert.alert(
         'Error Loading PDF',
         'Could not load the PDF file. Please try again.',
-        [{ text: 'OK', onPress: handleClose }]
+        [
+          { text: 'Retry', onPress: () => loadPdfAsset(book) },
+          { text: 'Close', onPress: handleClose },
+        ]
       );
     }
   };
@@ -148,16 +154,18 @@ const PDFReaderScreen = () => {
     try {
       // Load saved page
       const savedPage = await AsyncStorage.getItem(`book_${bookId}_page`);
-      if (savedPage) {
-        setCurrentPage(parseInt(savedPage));
-      }
+      if (savedPage) setCurrentPage(parseInt(savedPage));
 
       // Load bookmarks
       const savedBookmarks = await AsyncStorage.getItem(
         `book_${bookId}_bookmarks`
       );
-      if (savedBookmarks) {
-        setBookmarks(JSON.parse(savedBookmarks));
+      if (savedBookmarks) setBookmarks(JSON.parse(savedBookmarks));
+
+      // Load reader settings
+      const savedSettings = await AsyncStorage.getItem('reader_settings');
+      if (savedSettings) {
+        setReaderSettings(JSON.parse(savedSettings));
       }
     } catch (error) {
       console.error('Error loading reader data:', error);
@@ -166,11 +174,15 @@ const PDFReaderScreen = () => {
 
   const saveReaderData = async () => {
     try {
-      await AsyncStorage.multiSet([
-        [`book_${bookId}_page`, currentPage.toString()],
-        [`book_${bookId}_bookmarks`, JSON.stringify(bookmarks)],
-      ]);
-      console.log('Reader data saved successfully');
+      await AsyncStorage.setItem(`book_${bookId}_page`, currentPage.toString());
+      await AsyncStorage.setItem(
+        `book_${bookId}_bookmarks`,
+        JSON.stringify(bookmarks)
+      );
+      await AsyncStorage.setItem(
+        'reader_settings',
+        JSON.stringify(readerSettings)
+      );
     } catch (error) {
       console.error('Error saving reader data:', error);
     }
@@ -191,7 +203,7 @@ const PDFReaderScreen = () => {
 
     try {
       await Share.share({
-        message: `Reading "${book.title}" by ${book.author} on The Cliff News app. Currently on page ${currentPage} of ${totalPages}.`,
+        message: `Reading "${book.title}" by ${book.author} on The Cliff News app`,
         title: book.title,
       });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -202,13 +214,37 @@ const PDFReaderScreen = () => {
 
   const toggleControls = () => {
     setShowControls(!showControls);
+    if (!showControls) {
+      autoHideControls();
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const autoHideControls = () => {
+    if (hideControlsTimer.current) {
+      clearTimeout(hideControlsTimer.current);
+    }
+    hideControlsTimer.current = setTimeout(() => {
+      setShowControls(false);
+    }, 4000);
+  };
+
+  const zoomIn = () => {
+    const newScale = Math.min(scale + 0.2, 2.5);
+    setScale(newScale);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const zoomOut = () => {
+    const newScale = Math.max(scale - 0.2, 0.7);
+    setScale(newScale);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const goToPage = (page: number) => {
     if (page >= 1 && page <= totalPages && pdfRef.current) {
-      setCurrentPage(page);
       pdfRef.current.setPage(page);
+      setCurrentPage(page);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
   };
@@ -238,41 +274,12 @@ const PDFReaderScreen = () => {
     );
   };
 
-  const handlePageChanged = (page: number, numberOfPages: number) => {
-    setCurrentPage(page);
-    if (totalPages === 0) {
-      setTotalPages(numberOfPages);
+  const handleReload = () => {
+    if (book) {
+      setIsLoading(true);
+      setHasError(false);
+      loadPdfAsset(book);
     }
-  };
-
-  const handleLoadComplete = (numberOfPages: number, filePath: string) => {
-    console.log('PDF loaded successfully:', numberOfPages, 'pages');
-    setTotalPages(numberOfPages);
-    setIsLoading(false);
-
-    // Go to saved page
-    if (currentPage > 1 && pdfRef.current) {
-      setTimeout(() => {
-        pdfRef.current?.setPage(currentPage);
-      }, 500);
-    }
-
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  };
-
-  const handleError = (error: any) => {
-    console.error('PDF Error:', error);
-    setIsLoading(false);
-    Alert.alert(
-      'Error Loading PDF',
-      'There was an error loading the PDF file. Please try again.',
-      [{ text: 'OK', onPress: handleClose }]
-    );
-  };
-
-  const getProgressPercentage = () => {
-    if (totalPages === 0) return 0;
-    return Math.round((currentPage / totalPages) * 100);
   };
 
   const isBookmarked = bookmarks.includes(currentPage);
@@ -296,17 +303,33 @@ const PDFReaderScreen = () => {
     ],
   }));
 
-  const progressBarStyle = useAnimatedStyle(() => ({
-    width: withTiming(`${getProgressPercentage()}%`, { duration: 500 }),
-  }));
-
-  if (!book || isLoading || !pdfUri) {
+  // Loading screen
+  if (!book || !pdfSource) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <StatusBar
           barStyle={isDarkMode ? 'light-content' : 'dark-content'}
           backgroundColor={colors.background}
         />
+
+        {/* Header with close button */}
+        <SafeAreaView edges={['top']}>
+          <View
+            style={[styles.loadingHeader, { backgroundColor: colors.primary }]}
+          >
+            <TouchableOpacity
+              onPress={handleClose}
+              style={styles.loadingCloseButton}
+            >
+              <ArrowLeft size={24} color={colors.white} />
+            </TouchableOpacity>
+            <Text style={[styles.loadingHeaderTitle, { color: colors.white }]}>
+              {book?.title || 'Loading...'}
+            </Text>
+            <View style={{ width: 40 }} />
+          </View>
+        </SafeAreaView>
+
         <View style={styles.loadingContainer}>
           <FileText size={64} color={colors.primary} />
           <ActivityIndicator
@@ -315,17 +338,30 @@ const PDFReaderScreen = () => {
             style={{ marginTop: 20 }}
           />
           <Text style={[styles.loadingText, { color: colors.textPrimary }]}>
-            {!book ? 'Loading book...' : 'Preparing PDF...'}
+            {!book
+              ? 'Loading book...'
+              : hasError
+              ? 'Error loading PDF'
+              : 'Preparing PDF...'}
           </Text>
           <Text
             style={[styles.loadingSubtext, { color: colors.textSecondary }]}
           >
-            This may take a moment for large files
+            {hasError
+              ? 'Please check your connection'
+              : 'This may take a moment'}
           </Text>
-          {book && (
-            <Text style={[styles.bookLoadingTitle, { color: colors.primary }]}>
-              {book.title}
-            </Text>
+
+          {hasError && (
+            <TouchableOpacity
+              style={[styles.retryButton, { backgroundColor: colors.primary }]}
+              onPress={handleReload}
+            >
+              <RefreshCw size={20} color={colors.white} />
+              <Text style={[styles.retryButtonText, { color: colors.white }]}>
+                Retry
+              </Text>
+            </TouchableOpacity>
           )}
         </View>
       </View>
@@ -346,56 +382,66 @@ const PDFReaderScreen = () => {
       />
 
       {/* PDF Viewer */}
-      <View style={styles.pdfContainer}>
-        <TouchableOpacity
-          style={styles.pdfTouchable}
-          onPress={toggleControls}
-          activeOpacity={1}
-        >
-          <Pdf
-            ref={pdfRef}
-            source={{ uri: pdfUri, cache: true }}
-            style={styles.pdf}
-            onLoadComplete={handleLoadComplete}
-            onPageChanged={handlePageChanged}
-            onError={handleError}
-            page={currentPage}
-            minScale={0.5}
-            maxScale={3.0}
-            horizontal={true}
-            spacing={10}
-            password=""
-            enablePaging={true}
-            enableRTL={false}
-            enableAnnotationRendering={true}
-            enableDoubleTapZoom={true}
-            trustAllCerts={false}
-            singlePage={false}
-            // fitWidth={true}
-            // activityIndicatorProps={{
-            //   color: colors.primary,
-            //   progressTintColor: colors.primary,
-            // }}
-          />
-        </TouchableOpacity>
-      </View>
-
-      {/* Progress Bar */}
-      <View
-        style={[styles.progressContainer, { backgroundColor: colors.surface }]}
+      <TouchableOpacity
+        style={styles.pdfContainer}
+        onPress={toggleControls}
+        activeOpacity={1}
       >
-        <View
-          style={[styles.progressBar, { backgroundColor: colors.lightGray }]}
-        >
-          <Animated.View
-            style={[
-              styles.progressFill,
-              { backgroundColor: colors.primary },
-              progressBarStyle,
-            ]}
-          />
-        </View>
-      </View>
+        <Pdf
+          ref={pdfRef}
+          source={pdfSource}
+          style={styles.pdf}
+          scale={scale}
+          minScale={0.5}
+          maxScale={3.0}
+          page={currentPage}
+          horizontal={false}
+          enablePaging={true}
+          enableRTL={false}
+          enableAnnotationRendering={false}
+          trustAllCerts={false}
+          onLoadComplete={(numberOfPages, path) => {
+            console.log(`PDF loaded: ${numberOfPages} pages`);
+            setTotalPages(numberOfPages);
+            setIsLoading(false);
+            // Navigate to saved page if available
+            if (currentPage > 1 && currentPage <= numberOfPages) {
+              setTimeout(() => {
+                pdfRef.current?.setPage(currentPage);
+              }, 100);
+            }
+          }}
+          onPageChanged={(page, numberOfPages) => {
+            console.log(`Page changed: ${page}/${numberOfPages}`);
+            setCurrentPage(page);
+          }}
+          onError={(error) => {
+            console.error('PDF Error:', error);
+            setHasError(true);
+            setIsLoading(false);
+            Alert.alert(
+              'Error Loading PDF',
+              'Could not display the PDF file. Please try again.',
+              [
+                { text: 'Retry', onPress: handleReload },
+                { text: 'Close', onPress: handleClose },
+              ]
+            );
+          }}
+          onPressLink={(uri) => {
+            console.log(`Link pressed: ${uri}`);
+          }}
+          spacing={10}
+          fitPolicy={0} // 0 = width, 1 = height, 2 = both
+          // activityIndicator={
+          //   <ActivityIndicator size="large" color={colors.primary} />
+          // }
+          // activityIndicatorProps={{
+          //   color: colors.primary,
+          //   progressTintColor: colors.primary,
+          // }}
+        />
+      </TouchableOpacity>
 
       {/* Top Controls */}
       {showControls && (
@@ -435,9 +481,6 @@ const PDFReaderScreen = () => {
                   numberOfLines={1}
                 >
                   by {book.author}
-                </Text>
-                <Text style={[styles.progressText, { color: colors.white }]}>
-                  {getProgressPercentage()}% complete
                 </Text>
               </View>
 
@@ -501,7 +544,7 @@ const PDFReaderScreen = () => {
 
                 <View style={styles.pageInfo}>
                   <Text style={[styles.pageText, { color: colors.white }]}>
-                    {currentPage} of {totalPages}
+                    {currentPage} / {totalPages || '...'}
                   </Text>
                 </View>
 
@@ -516,12 +559,27 @@ const PDFReaderScreen = () => {
                   <ChevronRight size={24} color={colors.white} />
                 </TouchableOpacity>
               </View>
+
+              {/* Zoom Controls */}
+              <View style={styles.zoomControls}>
+                <TouchableOpacity onPress={zoomOut} style={styles.zoomButton}>
+                  <ZoomOut size={20} color={colors.white} />
+                </TouchableOpacity>
+
+                <Text style={[styles.zoomText, { color: colors.white }]}>
+                  {Math.round(scale * 100)}%
+                </Text>
+
+                <TouchableOpacity onPress={zoomIn} style={styles.zoomButton}>
+                  <ZoomIn size={20} color={colors.white} />
+                </TouchableOpacity>
+              </View>
             </View>
           </SafeAreaView>
         </Animated.View>
       )}
 
-      {/* Simple Settings Modal */}
+      {/* Settings Modal */}
       <Modal
         visible={showSettings}
         animationType="slide"
@@ -529,19 +587,16 @@ const PDFReaderScreen = () => {
         onRequestClose={() => setShowSettings(false)}
       >
         <View
-          style={[
-            styles.modalContainer,
-            { backgroundColor: colors.background },
-          ]}
+          style={[styles.settingsModal, { backgroundColor: colors.background }]}
         >
           <View
             style={[
-              styles.modalHeader,
+              styles.settingsHeader,
               { borderBottomColor: colors.textSecondary },
             ]}
           >
-            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
-              Settings
+            <Text style={[styles.settingsTitle, { color: colors.textPrimary }]}>
+              Reading Settings
             </Text>
             <TouchableOpacity
               onPress={() => setShowSettings(false)}
@@ -551,7 +606,7 @@ const PDFReaderScreen = () => {
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.modalContent}>
+          <ScrollView style={styles.settingsContent}>
             {/* Theme Toggle */}
             <View style={styles.settingItem}>
               <View style={styles.settingInfo}>
@@ -602,13 +657,30 @@ const PDFReaderScreen = () => {
             {/* Bookmarks */}
             {bookmarks.length > 0 && (
               <>
-                <View style={styles.sectionHeader}>
-                  <Text
-                    style={[styles.sectionTitle, { color: colors.textPrimary }]}
-                  >
-                    Bookmarks ({bookmarks.length})
-                  </Text>
+                <View style={styles.settingItem}>
+                  <View style={styles.settingInfo}>
+                    <Bookmark size={24} color={colors.textPrimary} />
+                    <View style={styles.settingTextContainer}>
+                      <Text
+                        style={[
+                          styles.settingLabel,
+                          { color: colors.textPrimary },
+                        ]}
+                      >
+                        Bookmarks ({bookmarks.length})
+                      </Text>
+                      <Text
+                        style={[
+                          styles.settingDescription,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
+                        Your saved pages
+                      </Text>
+                    </View>
+                  </View>
                 </View>
+
                 {bookmarks.map((bookmark, index) => (
                   <TouchableOpacity
                     key={bookmark}
@@ -621,7 +693,6 @@ const PDFReaderScreen = () => {
                       setShowSettings(false);
                     }}
                   >
-                    <Bookmark size={16} color={colors.primary} />
                     <Text
                       style={[
                         styles.bookmarkText,
@@ -636,84 +707,90 @@ const PDFReaderScreen = () => {
               </>
             )}
 
-            {/* Book Info */}
-            <View style={styles.sectionHeader}>
-              <Text
-                style={[styles.sectionTitle, { color: colors.textPrimary }]}
-              >
-                About This Book
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.bookInfoContainer,
-                { backgroundColor: colors.surface },
-              ]}
+            {/* Reset Zoom */}
+            <TouchableOpacity
+              style={[styles.settingItem, styles.actionItem]}
+              onPress={() => {
+                setScale(1.0);
+              }}
             >
-              <Text
-                style={[styles.bookInfoTitle, { color: colors.textPrimary }]}
-              >
-                {book.title}
-              </Text>
-              <Text
-                style={[styles.bookInfoAuthor, { color: colors.textSecondary }]}
-              >
-                by {book.author}
-              </Text>
-              <Text
-                style={[
-                  styles.bookInfoDescription,
-                  { color: colors.textSecondary },
-                ]}
-              >
-                {book.description}
-              </Text>
-              <View style={styles.bookInfoMeta}>
-                <Text
-                  style={[
-                    styles.bookInfoMetaText,
-                    { color: colors.textSecondary },
-                  ]}
-                >
-                  Category:{' '}
-                  {book.category === 'religious'
-                    ? 'Religious & Devotional'
-                    : 'Novels & Stories'}
-                </Text>
-                <Text
-                  style={[
-                    styles.bookInfoMetaText,
-                    { color: colors.textSecondary },
-                  ]}
-                >
-                  Language:{' '}
-                  {book.language === 'hindi'
-                    ? 'Hindi'
-                    : book.language === 'english'
-                    ? 'English'
-                    : 'Both'}
-                </Text>
-                <Text
-                  style={[
-                    styles.bookInfoMetaText,
-                    { color: colors.textSecondary },
-                  ]}
-                >
-                  Total Pages: {totalPages}
-                </Text>
-                <Text
-                  style={[
-                    styles.bookInfoMetaText,
-                    { color: colors.textSecondary },
-                  ]}
-                >
-                  Progress: {getProgressPercentage()}%
-                </Text>
+              <View style={styles.settingInfo}>
+                <RotateCcw size={24} color={colors.textPrimary} />
+                <View style={styles.settingTextContainer}>
+                  <Text
+                    style={[styles.settingLabel, { color: colors.textPrimary }]}
+                  >
+                    Reset Zoom
+                  </Text>
+                  <Text
+                    style={[
+                      styles.settingDescription,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    Return to default zoom level
+                  </Text>
+                </View>
               </View>
-            </View>
+            </TouchableOpacity>
+
+            {/* Book Information */}
+            <TouchableOpacity style={styles.settingItem}>
+              <View style={styles.settingInfo}>
+                <FileText size={24} color={colors.textPrimary} />
+                <View style={styles.settingTextContainer}>
+                  <Text
+                    style={[styles.settingLabel, { color: colors.textPrimary }]}
+                  >
+                    Book Information
+                  </Text>
+                  <Text
+                    style={[
+                      styles.settingDescription,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    {book.description}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.settingDescription,
+                      { color: colors.textSecondary, marginTop: 4 },
+                    ]}
+                  >
+                    Category:{' '}
+                    {book.category === 'religious'
+                      ? 'Religious & Devotional'
+                      : 'Novels & Stories'}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.settingDescription,
+                      { color: colors.textSecondary, marginTop: 2 },
+                    ]}
+                  >
+                    Pages: {totalPages || '...'} • Progress:{' '}
+                    {totalPages
+                      ? Math.round((currentPage / totalPages) * 100)
+                      : 0}
+                    %
+                  </Text>
+                </View>
+              </View>
+            </TouchableOpacity>
           </ScrollView>
         </View>
       </Modal>
+
+      {/* Loading overlay */}
+      {isLoading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingOverlayText, { color: colors.primary }]}>
+            Loading PDF...
+          </Text>
+        </View>
+      )}
     </View>
   );
 };
@@ -728,6 +805,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
+  loadingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    minHeight: 60,
+  },
+  loadingCloseButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    minWidth: 40,
+    minHeight: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingHeaderTitle: {
+    fontFamily: TYPOGRAPHY.heading.fontFamily,
+    fontSize: 18,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    flex: 1,
+    marginHorizontal: 16,
+  },
   loadingText: {
     fontFamily: TYPOGRAPHY.emphasis.fontFamily,
     fontSize: 18,
@@ -741,39 +843,44 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
-  bookLoadingTitle: {
-    fontFamily: TYPOGRAPHY.heading.fontFamily,
-    fontSize: 20,
-    marginTop: 16,
-    textAlign: 'center',
-    fontWeight: 'bold',
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    fontFamily: TYPOGRAPHY.emphasis.fontFamily,
+    fontSize: 16,
+    marginLeft: 8,
+    fontWeight: '600',
   },
   pdfContainer: {
     flex: 1,
   },
-  pdfTouchable: {
-    flex: 1,
-  },
   pdf: {
     flex: 1,
-    width: width,
-    height: height,
+    width: Dimensions.get('window').width,
+    height: Dimensions.get('window').height,
   },
-  progressContainer: {
-    height: 3,
-    width: '100%',
+  loadingOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    zIndex: 999,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 9999,
   },
-  progressBar: {
-    flex: 1,
-    height: '100%',
-  },
-  progressFill: {
-    height: '100%',
+  loadingOverlayText: {
+    marginTop: 16,
+    fontSize: 16,
+    fontFamily: TYPOGRAPHY.body.fontFamily,
   },
   topControls: {
     position: 'absolute',
@@ -792,7 +899,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    minHeight: 70,
+    minHeight: 60,
   },
   topLeft: {
     flexDirection: 'row',
@@ -814,7 +921,7 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    marginHorizontal: 3,
+    marginHorizontal: 4,
     minWidth: 40,
     minHeight: 40,
     justifyContent: 'center',
@@ -830,13 +937,6 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.body.fontFamily,
     fontSize: 12,
     opacity: 0.9,
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  progressText: {
-    fontFamily: TYPOGRAPHY.body.fontFamily,
-    fontSize: 11,
-    opacity: 0.8,
     marginTop: 2,
     textAlign: 'center',
   },
@@ -860,12 +960,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 12,
   },
   navButton: {
     padding: 8,
     borderRadius: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    marginHorizontal: 40,
+    marginHorizontal: 20,
     minWidth: 44,
     minHeight: 44,
     justifyContent: 'center',
@@ -874,9 +975,9 @@ const styles = StyleSheet.create({
   pageInfo: {
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingVertical: 8,
     borderRadius: 20,
-    minWidth: 120,
+    minWidth: 100,
     alignItems: 'center',
   },
   pageText: {
@@ -884,12 +985,34 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
+  zoomControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginHorizontal: 20,
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  zoomText: {
+    fontFamily: TYPOGRAPHY.body.fontFamily,
+    fontSize: 14,
+    fontWeight: '600',
+    minWidth: 60,
+    textAlign: 'center',
+  },
 
-  // Modal Styles
-  modalContainer: {
+  // Settings Modal Styles
+  settingsModal: {
     flex: 1,
   },
-  modalHeader: {
+  settingsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -897,7 +1020,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderBottomWidth: 1,
   },
-  modalTitle: {
+  settingsTitle: {
     fontFamily: TYPOGRAPHY.heading.fontFamily,
     fontSize: 20,
     fontWeight: 'bold',
@@ -905,12 +1028,10 @@ const styles = StyleSheet.create({
   closeButton: {
     padding: 8,
   },
-  modalContent: {
+  settingsContent: {
     flex: 1,
     paddingHorizontal: 20,
   },
-
-  // Settings Styles
   settingItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -918,6 +1039,9 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
+  actionItem: {
+    borderBottomWidth: 0,
   },
   settingInfo: {
     flexDirection: 'row',
@@ -937,6 +1061,7 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.body.fontFamily,
     fontSize: 14,
     marginTop: 2,
+    lineHeight: 18,
   },
   toggleButton: {
     width: 50,
@@ -950,66 +1075,19 @@ const styles = StyleSheet.create({
     height: 26,
     borderRadius: 13,
   },
-
-  // Section Styles
-  sectionHeader: {
-    marginTop: 20,
-    marginBottom: 10,
-  },
-  sectionTitle: {
-    fontFamily: TYPOGRAPHY.heading.fontFamily,
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-
-  // Bookmark Styles
   bookmarkItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
     marginVertical: 4,
+    marginLeft: 40,
     borderRadius: 8,
   },
   bookmarkText: {
     fontFamily: TYPOGRAPHY.body.fontFamily,
     fontSize: 14,
-    flex: 1,
-    marginLeft: 12,
-  },
-
-  // Book Info Styles
-  bookInfoContainer: {
-    padding: 16,
-    borderRadius: 12,
-    marginTop: 8,
-  },
-  bookInfoTitle: {
-    fontFamily: TYPOGRAPHY.heading.fontFamily,
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  bookInfoAuthor: {
-    fontFamily: TYPOGRAPHY.body.fontFamily,
-    fontSize: 16,
-    marginBottom: 8,
-  },
-  bookInfoDescription: {
-    fontFamily: TYPOGRAPHY.body.fontFamily,
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  bookInfoMeta: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(0,0,0,0.1)',
-    paddingTop: 12,
-  },
-  bookInfoMetaText: {
-    fontFamily: TYPOGRAPHY.body.fontFamily,
-    fontSize: 12,
-    marginBottom: 4,
   },
 });
 
