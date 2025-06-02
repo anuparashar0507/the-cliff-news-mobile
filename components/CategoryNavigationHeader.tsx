@@ -299,11 +299,6 @@ export default function CategoryNavigationHeader({
         animatedStyle,
       ]}
     >
-      {/* Active Category Indicator Line */}
-      <View
-        style={[styles.indicatorLine, { backgroundColor: colors.secondary }]}
-      />
-
       <ScrollView
         ref={scrollViewRef}
         horizontal
