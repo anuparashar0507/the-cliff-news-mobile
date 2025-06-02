@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme } from '@/context/ThemeContext';
+import type { ImageSourcePropType } from 'react-native';
 import {
   StyleSheet,
   View,
@@ -67,7 +68,10 @@ const AnimatedCard = ({
     <Animated.View style={[styles.bookCard, animatedStyle]}>
       <TouchableOpacity onPress={onPress} activeOpacity={0.8}>
         <View style={styles.thumbnailContainer}>
-          <Image source={book.thumbnail} style={styles.thumbnail} />
+          <Image
+            source={book.thumbnail as ImageSourcePropType}
+            style={styles.thumbnail}
+          />
           <View style={styles.languageBadge}>
             <Text style={styles.languageText}>
               {book.language === 'hindi'

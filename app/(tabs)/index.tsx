@@ -1,5 +1,8 @@
-// Fixed category navigation with better WebView handling
-// Replace your current home screen with this:
+// Enhanced home screen with better category navigation
+// Key improvements:
+// 1. More reliable category detection and setting
+// 2. Better auto-scroll timing for category header
+// 3. Improved state synchronization
 
 import React, {
   useEffect,
@@ -22,6 +25,33 @@ import { COLORS } from '@/constants/Theme';
 
 const HOME_URL = 'https://thecliffnews.in/';
 
+// Category mapping for better reliability
+const CATEGORY_MAPPING = {
+  'https://thecliffnews.in/': 'home',
+  'https://thecliffnews.in/index.php/category/national/': 'national',
+  'https://thecliffnews.in/index.php/category/state/': 'state',
+  'https://thecliffnews.in/index.php/category/entertainment/': 'entertainment',
+  'https://thecliffnews.in/index.php/category/sports/': 'sports',
+  'https://thecliffnews.in/index.php/category/technology/': 'technology',
+  'https://thecliffnews.in/index.php/category/travel/': 'travel',
+  'https://thecliffnews.in/index.php/category/stock-market/': 'stock',
+  'https://thecliffnews.in/index.php/category/nit/': 'nit',
+  'https://thecliffnews.in/index.php/category/do-it-yourself/': 'diy',
+};
+
+const CATEGORY_TITLES = {
+  home: 'THE CLIFF NEWS',
+  national: 'National News',
+  state: 'State News',
+  entertainment: 'Entertainment',
+  sports: 'Sports',
+  technology: 'Technology',
+  travel: 'Travel',
+  stock: 'Stock Market',
+  nit: 'NIT',
+  diy: 'Do It Yourself',
+};
+
 export default function HomeScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
@@ -34,6 +64,7 @@ export default function HomeScreen() {
   const [navigationHistory, setNavigationHistory] = useState<string[]>([
     HOME_URL,
   ]);
+  const [categoryUpdateKey, setCategoryUpdateKey] = useState(0); // Force category header update
 
   const webViewRef = useRef<WebView>(null);
   const loadingTimeoutRef = useRef<number | null>(null);
@@ -46,92 +77,110 @@ export default function HomeScreen() {
   );
   const scrollY = useSharedValue(0);
 
-  const detectPageType = (url: string, title?: string) => {
-    const isHome =
-      url === HOME_URL || (url.endsWith('/') && !url.includes('/index.php/'));
-    const isArticle =
-      url.includes('/index.php/') &&
-      url !== HOME_URL &&
-      !url.includes('/category/');
-    const isCategoryPage = url.includes('/category/') && !isArticle;
+  // Helper function to get category from URL with better accuracy
+  const getCategoryFromUrl = useCallback((url: string): string => {
+    // Normalize URL by removing trailing slashes and converting to lowercase
+    const normalizedUrl = url.toLowerCase().replace(/\/$/, '') + '/';
 
-    setIsArticlePage(isArticle);
-    setCurrentTitle(isArticle && title ? title : 'THE CLIFF NEWS');
-    updateCurrentCategory(url);
-
-    // Update navigation history
-    setNavigationHistory((prev) => {
-      const newHistory = [...prev];
-      if (newHistory[newHistory.length - 1] !== url) {
-        newHistory.push(url);
-        // Keep only last 10 URLs to prevent memory issues
-        if (newHistory.length > 10) {
-          newHistory.shift();
-        }
-      }
-      return newHistory;
-    });
-
-    console.log('📄 Page type detection:', {
-      url,
-      isHome,
-      isArticle,
-      isCategoryPage,
-    });
-    return { isHome, isArticle, isCategoryPage };
-  };
-
-  const updateCurrentCategory = (url: string) => {
-    const normalizedUrl = url.toLowerCase().replace(/\/$/, '');
-    let newCategory = 'home';
-
-    if (
-      normalizedUrl === 'https://thecliffnews.in' ||
-      normalizedUrl.endsWith('thecliffnews.in')
-    ) {
-      newCategory = 'home';
-    } else if (normalizedUrl.includes('/category/national')) {
-      newCategory = 'national';
-    } else if (normalizedUrl.includes('/category/state')) {
-      newCategory = 'state';
-    } else if (normalizedUrl.includes('/category/entertainment')) {
-      newCategory = 'entertainment';
-    } else if (normalizedUrl.includes('/category/sports')) {
-      newCategory = 'sports';
-    } else if (normalizedUrl.includes('/category/technology')) {
-      newCategory = 'technology';
-    } else if (normalizedUrl.includes('/category/travel')) {
-      newCategory = 'travel';
-    } else if (normalizedUrl.includes('/category/stock-market')) {
-      newCategory = 'stock';
-    } else if (normalizedUrl.includes('/category/nit')) {
-      newCategory = 'nit';
-    } else if (normalizedUrl.includes('/category/do-it-yourself')) {
-      newCategory = 'diy';
+    // Direct mapping first
+    if (CATEGORY_MAPPING[normalizedUrl as keyof typeof CATEGORY_MAPPING]) {
+      return CATEGORY_MAPPING[normalizedUrl as keyof typeof CATEGORY_MAPPING];
     }
 
-    console.log('🏷️ Category update:', {
-      url: normalizedUrl,
-      oldCategory: currentCategory,
-      newCategory,
-    });
-    setCurrentCategory(newCategory);
-  };
+    // Fallback pattern matching
+    if (normalizedUrl.includes('/category/national')) return 'national';
+    if (normalizedUrl.includes('/category/state')) return 'state';
+    if (normalizedUrl.includes('/category/entertainment'))
+      return 'entertainment';
+    if (normalizedUrl.includes('/category/sports')) return 'sports';
+    if (normalizedUrl.includes('/category/technology')) return 'technology';
+    if (normalizedUrl.includes('/category/travel')) return 'travel';
+    if (normalizedUrl.includes('/category/stock-market')) return 'stock';
+    if (normalizedUrl.includes('/category/nit')) return 'nit';
+    if (normalizedUrl.includes('/category/do-it-yourself')) return 'diy';
 
-  // Simplified injected JavaScript with better content detection
+    // Check if it's home page
+    if (
+      normalizedUrl === 'https://thecliffnews.in/' ||
+      (normalizedUrl.endsWith('thecliffnews.in/') &&
+        !normalizedUrl.includes('/index.php/'))
+    ) {
+      return 'home';
+    }
+
+    return 'home'; // Default fallback
+  }, []);
+
+  const detectPageType = useCallback(
+    (url: string, title?: string) => {
+      const isHome =
+        getCategoryFromUrl(url) === 'home' && !url.includes('/index.php/');
+      const isArticle =
+        url.includes('/index.php/') &&
+        url !== HOME_URL &&
+        !url.includes('/category/');
+      const isCategoryPage = url.includes('/category/') && !isArticle;
+
+      const newCategory = getCategoryFromUrl(url);
+
+      console.log('📄 Page type detection:', {
+        url,
+        isHome,
+        isArticle,
+        isCategoryPage,
+        newCategory,
+        oldCategory: currentCategory,
+      });
+
+      setIsArticlePage(isArticle);
+      setCurrentTitle(
+        isArticle && title
+          ? title
+          : CATEGORY_TITLES[newCategory as keyof typeof CATEGORY_TITLES] ||
+              'THE CLIFF NEWS'
+      );
+
+      // Update category with force refresh if changed
+      if (newCategory !== currentCategory) {
+        console.log(
+          '🎯 Category changed from',
+          currentCategory,
+          'to',
+          newCategory
+        );
+        setCurrentCategory(newCategory);
+        setCategoryUpdateKey((prev) => prev + 1); // Force category header update
+      }
+
+      // Update navigation history
+      setNavigationHistory((prev) => {
+        const newHistory = [...prev];
+        if (newHistory[newHistory.length - 1] !== url) {
+          newHistory.push(url);
+          if (newHistory.length > 10) {
+            newHistory.shift();
+          }
+        }
+        return newHistory;
+      });
+
+      return { isHome, isArticle, isCategoryPage, category: newCategory };
+    },
+    [currentCategory, getCategoryFromUrl]
+  );
+
+  // Enhanced injected JavaScript (keep your existing optimized version)
   const injectedJavaScript = useMemo(
     () => `
     (function() {
       let scrollTimeout;
       let contentCheckAttempts = 0;
-      const maxContentCheckAttempts = 20; // 10 seconds total
+      const maxContentCheckAttempts = 20;
       
       console.log('WebView script initialized for:', window.location.href);
       
-      // Mobile optimizations
       function optimizeForMobile() {
         try {
-          // Hide navigation elements
           const hideSelectors = [
             '#masthead', '.site-header', 'header.site-header', 
             '#wpadminbar', '.top-header', '.main-header', 
@@ -146,7 +195,6 @@ export default function HomeScreen() {
             });
           });
           
-          // Add mobile styles
           if (!document.getElementById('mobile-styles')) {
             const style = document.createElement('style');
             style.id = 'mobile-styles';
@@ -182,12 +230,10 @@ export default function HomeScreen() {
         }
       }
       
-      // Enhanced content detection
       function checkForContent() {
         try {
           contentCheckAttempts++;
           
-          // Look for various content indicators
           const contentSelectors = [
             'article',
             '.entry-content', 
@@ -212,21 +258,17 @@ export default function HomeScreen() {
             }
           }
           
-          // Additional checks
           if (!hasContent) {
-            // Check for headlines/titles
             const headlines = document.querySelectorAll('h1, h2, h3, .entry-title, .post-title, [class*="title"]');
             hasContent = headlines.length > 0;
           }
           
           if (!hasContent) {
-            // Check for images
             const images = document.querySelectorAll('img');
-            hasContent = images.length > 2; // More than just logo/icons
+            hasContent = images.length > 2;
           }
           
           if (!hasContent) {
-            // Check total text content
             const bodyText = document.body.textContent.trim();
             hasContent = bodyText.length > 1000 && !bodyText.toLowerCase().includes('loading');
           }
@@ -261,7 +303,6 @@ export default function HomeScreen() {
         }
       }
       
-      // Scroll handling
       function handleScroll() {
         const y = window.pageYOffset || document.documentElement.scrollTop;
         window.ReactNativeWebView?.postMessage(JSON.stringify({
@@ -270,27 +311,22 @@ export default function HomeScreen() {
         }));
       }
       
-      // Initialize everything
       function initialize() {
         console.log('Initializing WebView for:', window.location.href);
         optimizeForMobile();
         
-        // Start content checking
         if (!checkForContent()) {
-          // Check periodically
           const contentInterval = setInterval(() => {
             if (checkForContent()) {
               clearInterval(contentInterval);
             }
           }, 500);
           
-          // Stop after max attempts
           setTimeout(() => {
             clearInterval(contentInterval);
           }, maxContentCheckAttempts * 500);
         }
         
-        // Send page info
         setTimeout(() => {
           const title = document.querySelector('h1, .entry-title, .page-title')?.textContent?.trim();
           window.ReactNativeWebView?.postMessage(JSON.stringify({
@@ -301,20 +337,17 @@ export default function HomeScreen() {
         }, 1000);
       }
       
-      // Event listeners
       window.addEventListener('scroll', () => {
         clearTimeout(scrollTimeout);
         scrollTimeout = setTimeout(handleScroll, 100);
       }, { passive: true });
       
-      // Initialize when ready
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initialize);
       } else {
         initialize();
       }
       
-      // Also try on window load
       window.addEventListener('load', () => {
         setTimeout(initialize, 500);
       });
@@ -325,19 +358,17 @@ export default function HomeScreen() {
     []
   );
 
-  // Loading handlers
+  // Loading handlers (keep your existing optimized versions)
   const handleLoadStart = useCallback(() => {
     console.log('🚀 Load started for:', currentUrl);
     setLoadStartTime(Date.now());
     setIsLoading(true);
     setHasError(false);
 
-    // Clear any existing timeout
     if (loadingTimeoutRef.current) {
       clearTimeout(loadingTimeoutRef.current);
     }
 
-    // Set timeout (20 seconds)
     loadingTimeoutRef.current = setTimeout(() => {
       console.log('⏰ Loading timeout - showing error');
       setHasError(true);
@@ -349,20 +380,17 @@ export default function HomeScreen() {
     const loadTime = Date.now() - loadStartTime;
     console.log(`📄 Load end - ${loadTime}ms`);
 
-    // Clear timeout
     if (loadingTimeoutRef.current) {
       clearTimeout(loadingTimeoutRef.current);
       loadingTimeoutRef.current = null;
     }
 
-    // Don't hide loading immediately - wait for content detection
-    // But set a fallback in case content detection fails
     setTimeout(() => {
       if (isLoading) {
         console.log('📄 Fallback: Hiding loading after load end timeout');
         setIsLoading(false);
       }
-    }, 3000); // 3 second fallback
+    }, 3000);
   }, [loadStartTime, isLoading]);
 
   const handleError = useCallback((syntheticEvent: any) => {
@@ -386,7 +414,6 @@ export default function HomeScreen() {
         switch (data.type) {
           case 'CONTENT_READY':
             console.log('🎉 Content ready!', data);
-            // Hide loading immediately when content is detected
             setIsLoading(false);
             break;
 
@@ -404,10 +431,10 @@ export default function HomeScreen() {
         // Ignore invalid JSON
       }
     },
-    [scrollY]
+    [scrollY, detectPageType]
   );
 
-  // Improved category navigation
+  // Enhanced category navigation with better state management
   const handleCategoryPress = useCallback(
     (url: string, title: string) => {
       if (url === currentUrl) {
@@ -418,9 +445,14 @@ export default function HomeScreen() {
 
       console.log('🔗 Navigating to category:', title, 'URL:', url);
 
-      // Update state immediately
+      // Get the expected category from URL
+      const expectedCategory = getCategoryFromUrl(url);
+
+      // Update state immediately and synchronously
       setCurrentTitle(title);
       setCurrentUrl(url);
+      setCurrentCategory(expectedCategory);
+      setCategoryUpdateKey((prev) => prev + 1); // Force category header update
 
       // Add to navigation history
       setNavigationHistory((prev) => {
@@ -434,10 +466,16 @@ export default function HomeScreen() {
         return newHistory;
       });
 
+      console.log('🎯 Category state updated immediately:', {
+        url,
+        title,
+        category: expectedCategory,
+      });
+
       // Force WebView refresh with new key
       setWebViewKey((prev) => prev + 1);
     },
-    [currentUrl]
+    [currentUrl, getCategoryFromUrl]
   );
 
   const handleReload = useCallback(() => {
@@ -453,108 +491,68 @@ export default function HomeScreen() {
 
       if (navState.url && navState.url !== currentUrl) {
         setCurrentUrl(navState.url);
-        detectPageType(navState.url, navState.title);
+        const pageInfo = detectPageType(navState.url, navState.title);
+
+        // Update category immediately if it changed
+        if (pageInfo.category !== currentCategory) {
+          setCurrentCategory(pageInfo.category);
+          setCategoryUpdateKey((prev) => prev + 1);
+        }
       }
     },
-    [currentUrl]
+    [currentUrl, detectPageType, currentCategory]
   );
 
+  // Enhanced back press handling
   const handleBackPress = useCallback(() => {
     console.log('🔙 Back pressed, navigation history:', navigationHistory);
 
     if (navigationHistory.length > 1) {
-      // Go to previous URL in our history
       const newHistory = [...navigationHistory];
-      newHistory.pop(); // Remove current URL
+      newHistory.pop();
       const previousUrl = newHistory[newHistory.length - 1];
 
       console.log('🔙 Going back to:', previousUrl);
 
-      // Update everything IMMEDIATELY and SYNCHRONOUSLY
-      const newCategory = getCurrentCategoryFromUrl(previousUrl);
-      console.log('🎯 Immediately setting category to:', newCategory);
+      // Get expected category and title
+      const newCategory = getCategoryFromUrl(
+        previousUrl
+      ) as keyof typeof CATEGORY_TITLES;
+      const newTitle = CATEGORY_TITLES[newCategory] || 'THE CLIFF NEWS';
 
-      // Update all states immediately - DO NOT set isBackNavigation flag
+      console.log('🎯 Back navigation - setting category to:', newCategory);
+
+      // Update all states immediately and synchronously
       setNavigationHistory(newHistory);
       setCurrentUrl(previousUrl);
-      setCurrentCategory(newCategory); // Set category IMMEDIATELY
+      setCurrentCategory(newCategory);
+      setCurrentTitle(newTitle);
+      setCategoryUpdateKey((prev) => prev + 1); // Force category header update
 
-      // Set title based on category
-      if (newCategory === 'home') {
-        setCurrentTitle('THE CLIFF NEWS');
-      } else if (newCategory === 'national') {
-        setCurrentTitle('National News');
-      } else if (newCategory === 'state') {
-        setCurrentTitle('State News');
-      } else if (newCategory === 'entertainment') {
-        setCurrentTitle('Entertainment');
-      } else if (newCategory === 'sports') {
-        setCurrentTitle('Sports');
-      } else if (newCategory === 'technology') {
-        setCurrentTitle('Technology');
-      } else if (newCategory === 'travel') {
-        setCurrentTitle('Travel');
-      } else if (newCategory === 'stock') {
-        setCurrentTitle('Stock Market');
-      } else if (newCategory === 'nit') {
-        setCurrentTitle('NIT');
-      } else if (newCategory === 'diy') {
-        setCurrentTitle('DIY');
-      } else {
-        setCurrentTitle('THE CLIFF NEWS');
-      }
-
-      console.log('🔄 Back navigation complete:', {
+      console.log('🔄 Back navigation state updated:', {
         url: previousUrl,
         category: newCategory,
-        title: newCategory === 'national' ? 'National News' : 'Other',
+        title: newTitle,
       });
 
-      // Force WebView refresh AFTER state is updated
+      // Force WebView refresh after state is updated
       setWebViewKey((prev) => prev + 1);
     } else {
-      // No history, try WebView back or go to home
       if (webViewRef.current) {
         webViewRef.current.goBack();
       } else {
         handleHomePress();
       }
     }
-  }, [navigationHistory]);
-
-  // Helper function to get category from URL
-  const getCurrentCategoryFromUrl = (url: string) => {
-    if (
-      url === HOME_URL ||
-      (url.endsWith('/') && !url.includes('/index.php/'))
-    ) {
-      return 'home';
-    } else if (url.includes('/category/national')) {
-      return 'national';
-    } else if (url.includes('/category/state')) {
-      return 'state';
-    } else if (url.includes('/category/entertainment')) {
-      return 'entertainment';
-    } else if (url.includes('/category/sports')) {
-      return 'sports';
-    } else if (url.includes('/category/technology')) {
-      return 'technology';
-    } else if (url.includes('/category/travel')) {
-      return 'travel';
-    } else if (url.includes('/category/stock-market')) {
-      return 'stock';
-    } else if (url.includes('/category/nit')) {
-      return 'nit';
-    } else if (url.includes('/category/do-it-yourself')) {
-      return 'diy';
-    }
-    return 'home';
-  };
+  }, [navigationHistory, getCategoryFromUrl]);
 
   const handleHomePress = useCallback(() => {
-    handleCategoryPress(HOME_URL, 'THE CLIFF NEWS');
+    console.log('🏠 Home pressed');
     setCurrentCategory('home');
-    setNavigationHistory([HOME_URL]); // Reset history when going home
+    setCurrentTitle('THE CLIFF NEWS');
+    setCategoryUpdateKey((prev) => prev + 1);
+    handleCategoryPress(HOME_URL, 'THE CLIFF NEWS');
+    setNavigationHistory([HOME_URL]);
   }, [handleCategoryPress]);
 
   // Effects
@@ -565,9 +563,19 @@ export default function HomeScreen() {
 
   // Ensure category is updated when URL changes
   useEffect(() => {
-    console.log('🔗 URL changed, updating category:', currentUrl);
-    updateCurrentCategory(currentUrl);
-  }, [currentUrl]);
+    console.log('🔗 URL effect triggered:', currentUrl);
+    const newCategory = getCategoryFromUrl(currentUrl);
+    if (newCategory !== currentCategory) {
+      console.log(
+        '🎯 URL effect - updating category from',
+        currentCategory,
+        'to',
+        newCategory
+      );
+      setCurrentCategory(newCategory);
+      setCategoryUpdateKey((prev) => prev + 1);
+    }
+  }, [currentUrl, getCategoryFromUrl, currentCategory]);
 
   useEffect(() => {
     if (loadUrl && loadUrl !== currentUrl) {
@@ -596,16 +604,15 @@ export default function HomeScreen() {
   }
 
   // Determine what to show based on current page type
-  const isHome =
-    currentUrl === HOME_URL ||
-    (currentUrl.endsWith('/') && !currentUrl.includes('/index.php/'));
-  const isCategoryPage = currentUrl.includes('/category/') && !isArticlePage;
-  const shouldShowCategoryHeader = isHome || isCategoryPage; // Only show on home and category pages
+  const isHome = currentCategory === 'home' && !isArticlePage;
+  const isCategoryPage =
+    Object.values(CATEGORY_MAPPING).includes(currentCategory) && !isArticlePage;
+  const shouldShowCategoryHeader = isHome || isCategoryPage;
   const shouldShowBackButton =
-    !isHome && (navigationHistory.length > 1 || isArticlePage); // Never show on home
-  const shouldShowHomeButton = !isHome; // Show everywhere except home
+    !isHome && (navigationHistory.length > 1 || isArticlePage);
+  const shouldShowHomeButton = !isHome;
 
-  console.log('🎯 Navigation state:', {
+  console.log('🎯 Render state:', {
     isHome,
     isCategoryPage,
     isArticlePage,
@@ -613,6 +620,7 @@ export default function HomeScreen() {
     shouldShowBackButton,
     currentUrl,
     currentCategory,
+    categoryUpdateKey,
   });
 
   return (
@@ -627,10 +635,10 @@ export default function HomeScreen() {
         scrollY={scrollY}
       />
 
-      {/* Only show category header on home and category pages */}
+      {/* Category header with force update key */}
       {shouldShowCategoryHeader && (
         <CategoryNavigationHeader
-          key={`category-nav-${currentCategory}`} // Force re-render when category changes
+          key={`category-nav-${currentCategory}-${categoryUpdateKey}`}
           onCategoryPress={handleCategoryPress}
           scrollY={scrollY}
           activeCategory={currentCategory}
@@ -643,7 +651,7 @@ export default function HomeScreen() {
         <>
           <WebView
             ref={webViewRef}
-            key={`webview-${webViewKey}`} // Force refresh on key change
+            key={`webview-${webViewKey}`}
             source={{ uri: currentUrl }}
             style={styles.webview}
             onLoadStart={handleLoadStart}
@@ -652,7 +660,6 @@ export default function HomeScreen() {
             onNavigationStateChange={onNavigationStateChange}
             injectedJavaScript={injectedJavaScript}
             onMessage={handleWebViewMessage}
-            // Configuration
             javaScriptEnabled={true}
             domStorageEnabled={true}
             sharedCookiesEnabled={true}
@@ -661,11 +668,9 @@ export default function HomeScreen() {
             applicationNameForUserAgent="TheCliffNewsApp/1.0"
             showsVerticalScrollIndicator={false}
             showsHorizontalScrollIndicator={false}
-            // Performance
-            cacheEnabled={false} // Disable cache for category navigation
+            cacheEnabled={false}
             allowsBackForwardNavigationGestures={true}
             allowsLinkPreview={false}
-            // Force new page load
             incognito={false}
             {...(Platform.OS === 'android' && {
               mixedContentMode: 'compatibility',

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -91,7 +91,76 @@ export default function CategoryNavigationHeader({
 }: CategoryNavigationHeaderProps) {
   const { isDarkMode, colors } = useTheme();
   const [selectedCategory, setSelectedCategory] = useState(activeCategory);
+  const [categoryWidths, setCategoryWidths] = useState<{
+    [key: string]: number;
+  }>({});
+  const [isInitialized, setIsInitialized] = useState(false);
+
   const scrollViewRef = useRef<ScrollView>(null);
+  const itemRefs = useRef<{ [key: string]: View | null }>({});
+
+  // Calculate positions for auto-scroll
+  const calculateScrollPosition = useCallback(
+    (categoryId: string): number => {
+      const categoryIndex = categories.findIndex(
+        (cat) => cat.id === categoryId
+      );
+      if (categoryIndex === -1) return 0;
+
+      let totalWidth = 16; // Initial padding
+
+      // Sum widths of all categories before the target
+      for (let i = 0; i < categoryIndex; i++) {
+        const category = categories[i];
+        const categoryWidth = categoryWidths[category.id] || 100; // fallback width
+        totalWidth += categoryWidth + 8; // 8 = marginHorizontal * 2
+      }
+
+      // Add half of the target category width to center it
+      const targetWidth = categoryWidths[categoryId] || 100;
+      totalWidth += targetWidth / 2;
+
+      // Center on screen
+      const scrollToX = Math.max(0, totalWidth - width / 2);
+
+      console.log('📍 Auto-scroll calculation:', {
+        categoryId,
+        categoryIndex,
+        targetWidth,
+        totalWidth,
+        scrollToX,
+        screenWidth: width,
+      });
+
+      return scrollToX;
+    },
+    [categoryWidths]
+  );
+
+  // Auto-scroll to active category
+  const scrollToActiveCategory = useCallback(
+    (categoryId: string, animated = true) => {
+      if (!scrollViewRef.current || !isInitialized) {
+        console.log('⏳ Scroll delayed - not initialized yet');
+        return;
+      }
+
+      const scrollToX = calculateScrollPosition(categoryId);
+
+      console.log(
+        '🎯 Auto-scrolling to category:',
+        categoryId,
+        'position:',
+        scrollToX
+      );
+
+      scrollViewRef.current.scrollTo({
+        x: scrollToX,
+        animated,
+      });
+    },
+    [calculateScrollPosition, isInitialized]
+  );
 
   // Update selected category when activeCategory prop changes
   useEffect(() => {
@@ -101,8 +170,27 @@ export default function CategoryNavigationHeader({
       'to',
       activeCategory
     );
+
     setSelectedCategory(activeCategory);
-  }, [activeCategory, selectedCategory]);
+
+    // Auto-scroll to the new active category with a small delay to ensure layout is ready
+    setTimeout(() => {
+      scrollToActiveCategory(activeCategory, true);
+    }, 100);
+  }, [activeCategory, scrollToActiveCategory]);
+
+  // Initialize auto-scroll after layout
+  useEffect(() => {
+    if (
+      isInitialized &&
+      Object.keys(categoryWidths).length >= categories.length
+    ) {
+      console.log('📐 All category widths measured, performing initial scroll');
+      setTimeout(() => {
+        scrollToActiveCategory(selectedCategory, false); // No animation for initial scroll
+      }, 50);
+    }
+  }, [isInitialized, categoryWidths, selectedCategory, scrollToActiveCategory]);
 
   // Animation for scroll-based hiding
   const animatedStyle = useAnimatedStyle(() => {
@@ -139,24 +227,43 @@ export default function CategoryNavigationHeader({
   });
 
   const handleCategoryPress = (category: CategoryItem) => {
+    console.log('👆 Category pressed:', category.id);
     setSelectedCategory(category.id);
     onCategoryPress(category.url, category.title);
 
     // Auto-scroll to center the selected item
-    const categoryIndex = categories.findIndex((cat) => cat.id === category.id);
-    if (categoryIndex !== -1 && scrollViewRef.current) {
-      const itemWidth = 100; // Approximate width of each category item
-      const scrollToX = Math.max(
-        0,
-        categoryIndex * itemWidth - width / 2 + itemWidth / 2
-      );
-
-      scrollViewRef.current.scrollTo({
-        x: scrollToX,
-        animated: true,
-      });
-    }
+    setTimeout(() => {
+      scrollToActiveCategory(category.id, true);
+    }, 50);
   };
+
+  // Measure category item width
+  const handleCategoryLayout = useCallback(
+    (categoryId: string, width: number) => {
+      setCategoryWidths((prev) => {
+        const newWidths = { ...prev, [categoryId]: width };
+        console.log(
+          '📏 Category width measured:',
+          categoryId,
+          width,
+          'Total measured:',
+          Object.keys(newWidths).length
+        );
+
+        // Check if all categories are measured
+        if (
+          Object.keys(newWidths).length >= categories.length &&
+          !isInitialized
+        ) {
+          console.log('✅ All categories measured, initializing auto-scroll');
+          setIsInitialized(true);
+        }
+
+        return newWidths;
+      });
+    },
+    [isInitialized]
+  );
 
   const getCategoryItemStyle = (categoryId: string) => {
     const isSelected = selectedCategory === categoryId;
@@ -164,7 +271,8 @@ export default function CategoryNavigationHeader({
       styles.categoryItem,
       {
         backgroundColor: isSelected ? colors.primary : 'transparent',
-        borderColor: isSelected ? colors.primary : 'transparent',
+        borderColor: isSelected ? colors.primary : colors.textSecondary + '40', // 40 for opacity
+        borderWidth: isSelected ? 2 : 1,
       },
     ];
   };
@@ -176,7 +284,7 @@ export default function CategoryNavigationHeader({
       color: isSelected ? COLORS.white : colors.textPrimary,
       fontWeight: isSelected
         ? ('bold' as TextStyle['fontWeight'])
-        : ('normal' as TextStyle['fontWeight']),
+        : ('500' as TextStyle['fontWeight']),
     };
   };
 
@@ -186,7 +294,7 @@ export default function CategoryNavigationHeader({
         styles.container,
         {
           backgroundColor: colors.surface,
-          borderBottomColor: colors.textSecondary,
+          borderBottomColor: colors.textSecondary + '30',
         },
         animatedStyle,
       ]}
@@ -204,13 +312,29 @@ export default function CategoryNavigationHeader({
         style={styles.scrollView}
         bounces={false}
         decelerationRate="fast"
+        scrollEventThrottle={16}
+        onContentSizeChange={() => {
+          // Trigger auto-scroll when content size changes
+          if (isInitialized) {
+            setTimeout(() => {
+              scrollToActiveCategory(selectedCategory, false);
+            }, 50);
+          }
+        }}
       >
         {categories.map((category, index) => (
           <TouchableOpacity
             key={category.id}
+            ref={(ref) => {
+              itemRefs.current[category.id] = ref;
+            }}
             style={getCategoryItemStyle(category.id)}
             onPress={() => handleCategoryPress(category)}
             activeOpacity={0.7}
+            onLayout={(event) => {
+              const { width } = event.nativeEvent.layout;
+              handleCategoryLayout(category.id, width);
+            }}
           >
             <Text style={getCategoryTextStyle(category.id)}>
               {category.title}
@@ -222,6 +346,16 @@ export default function CategoryNavigationHeader({
                 style={[styles.activeDot, { backgroundColor: COLORS.white }]}
               />
             )}
+
+            {/* Subtle pulse animation for active category */}
+            {selectedCategory === category.id && (
+              <Animated.View
+                style={[
+                  styles.activePulse,
+                  { backgroundColor: colors.primary + '20' },
+                ]}
+              />
+            )}
           </TouchableOpacity>
         ))}
 
@@ -229,7 +363,7 @@ export default function CategoryNavigationHeader({
         <View style={{ width: 20 }} />
       </ScrollView>
 
-      {/* Gradient fade effects */}
+      {/* Enhanced gradient fade effects */}
       <View
         style={[
           styles.fadeLeft,
@@ -283,7 +417,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     marginHorizontal: 4,
     borderRadius: 20,
-    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
     minHeight: 36,
@@ -307,6 +440,15 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     alignSelf: 'center',
+  },
+  activePulse: {
+    position: 'absolute',
+    top: -2,
+    left: -2,
+    right: -2,
+    bottom: -2,
+    borderRadius: 22,
+    zIndex: -1,
   },
   fadeLeft: {
     position: 'absolute',
@@ -414,6 +556,3 @@ const liveStyles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
-
-// Merge styles
-Object.assign(styles, liveStyles);

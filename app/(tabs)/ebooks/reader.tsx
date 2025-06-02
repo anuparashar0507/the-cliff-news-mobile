@@ -1,4 +1,3 @@
-// ===== app/(tabs)/ebooks/reader.tsx (EXPO MANAGED WORKFLOW VERSION) =====
 import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
@@ -7,7 +6,6 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
-  Platform,
   StatusBar,
   Share,
   BackHandler,
@@ -17,21 +15,18 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { WebView } from 'react-native-webview';
+import Pdf from 'react-native-pdf';
 import { COLORS, TYPOGRAPHY } from '@/constants/Theme';
 import { useTheme } from '@/context/ThemeContext';
 import {
   ArrowLeft,
   Home,
   Share2,
-  ZoomIn,
-  ZoomOut,
   ChevronLeft,
   ChevronRight,
   MoreVertical,
   Sun,
   Moon,
-  RotateCcw,
   Bookmark,
   X,
   FileText,
@@ -45,14 +40,9 @@ import Animated, {
   useAnimatedStyle,
   withTiming,
 } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 
 const { width, height } = Dimensions.get('window');
-
-interface ReaderSettings {
-  fontSize: number;
-  nightMode: boolean;
-  pageTransition: 'smooth' | 'instant';
-}
 
 const PDFReaderScreen = () => {
   const router = useRouter();
@@ -60,22 +50,16 @@ const PDFReaderScreen = () => {
   const [book, setBook] = useState<EBook | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(100); // Default fallback
-  const [scale, setScale] = useState(1.0);
+  const [totalPages, setTotalPages] = useState(0);
   const [showControls, setShowControls] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [bookmarks, setBookmarks] = useState<number[]>([]);
   const [pdfUri, setPdfUri] = useState<string | null>(null);
-  const [readerSettings, setReaderSettings] = useState<ReaderSettings>({
-    fontSize: 16,
-    nightMode: false,
-    pageTransition: 'smooth',
-  });
+
   const { isDarkMode, colors, toggleTheme } = useTheme();
-  const webViewRef = useRef<WebView>(null);
-  const controlsOpacity = useSharedValue(1);
-  // const hideControlsTimer = useRef<NodeJS.Timeout>();
-  const hideControlsTimer = { current: 0 as number };
+  const pdfRef = useRef<Pdf>(null);
+  const hideControlsTimer = useRef<number>(0);
+
   // Handle hardware back button on Android
   useFocusEffect(
     React.useCallback(() => {
@@ -107,28 +91,49 @@ const PDFReaderScreen = () => {
     }
   }, [bookId]);
 
+  useEffect(() => {
+    // Auto-hide controls after 4 seconds
+    if (showControls) {
+      if (hideControlsTimer.current) {
+        clearTimeout(hideControlsTimer.current);
+      }
+      hideControlsTimer.current = setTimeout(() => {
+        setShowControls(false);
+      }, 4000);
+    }
+    return () => {
+      if (hideControlsTimer.current) {
+        clearTimeout(hideControlsTimer.current);
+      }
+    };
+  }, [showControls]);
+
   const loadPdfAsset = async (book: EBook) => {
     try {
       setIsLoading(true);
+      console.log('Loading PDF asset for book:', book.title);
 
       // Get the asset and copy it to a readable location
       const asset = Asset.fromModule(book.pdfPath);
       await asset.downloadAsync();
+      console.log('Asset downloaded:', asset.localUri);
 
-      // Copy to local file system so it can be accessed by WebView
+      // Copy to document directory for react-native-pdf
       const localUri = `${FileSystem.documentDirectory}${book.id}.pdf`;
+      console.log('Target local URI:', localUri);
 
       // Check if already copied
       const fileInfo = await FileSystem.getInfoAsync(localUri);
       if (!fileInfo.exists) {
+        console.log('Copying file to local directory...');
         await FileSystem.copyAsync({
           from: asset.localUri || asset.uri,
           to: localUri,
         });
       }
 
+      console.log('PDF file ready at:', localUri);
       setPdfUri(localUri);
-      console.log('PDF loaded successfully:', localUri);
     } catch (error) {
       console.error('Error loading PDF:', error);
       Alert.alert(
@@ -143,18 +148,16 @@ const PDFReaderScreen = () => {
     try {
       // Load saved page
       const savedPage = await AsyncStorage.getItem(`book_${bookId}_page`);
-      if (savedPage) setCurrentPage(parseInt(savedPage));
+      if (savedPage) {
+        setCurrentPage(parseInt(savedPage));
+      }
 
       // Load bookmarks
       const savedBookmarks = await AsyncStorage.getItem(
         `book_${bookId}_bookmarks`
       );
-      if (savedBookmarks) setBookmarks(JSON.parse(savedBookmarks));
-
-      // Load reader settings
-      const savedSettings = await AsyncStorage.getItem('reader_settings');
-      if (savedSettings) {
-        setReaderSettings(JSON.parse(savedSettings));
+      if (savedBookmarks) {
+        setBookmarks(JSON.parse(savedBookmarks));
       }
     } catch (error) {
       console.error('Error loading reader data:', error);
@@ -163,15 +166,11 @@ const PDFReaderScreen = () => {
 
   const saveReaderData = async () => {
     try {
-      await AsyncStorage.setItem(`book_${bookId}_page`, currentPage.toString());
-      await AsyncStorage.setItem(
-        `book_${bookId}_bookmarks`,
-        JSON.stringify(bookmarks)
-      );
-      await AsyncStorage.setItem(
-        'reader_settings',
-        JSON.stringify(readerSettings)
-      );
+      await AsyncStorage.multiSet([
+        [`book_${bookId}_page`, currentPage.toString()],
+        [`book_${bookId}_bookmarks`, JSON.stringify(bookmarks)],
+      ]);
+      console.log('Reader data saved successfully');
     } catch (error) {
       console.error('Error saving reader data:', error);
     }
@@ -192,9 +191,10 @@ const PDFReaderScreen = () => {
 
     try {
       await Share.share({
-        message: `Reading "${book.title}" by ${book.author} on The Cliff News app`,
+        message: `Reading "${book.title}" by ${book.author} on The Cliff News app. Currently on page ${currentPage} of ${totalPages}.`,
         title: book.title,
       });
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (error) {
       console.error('Error sharing:', error);
     }
@@ -202,36 +202,14 @@ const PDFReaderScreen = () => {
 
   const toggleControls = () => {
     setShowControls(!showControls);
-    if (!showControls) {
-      autoHideControls();
-    }
-  };
-
-  const autoHideControls = () => {
-    if (hideControlsTimer.current) {
-      clearTimeout(hideControlsTimer.current);
-    }
-    hideControlsTimer.current = setTimeout(() => {
-      setShowControls(false);
-    }, 4000);
-  };
-
-  const zoomIn = () => {
-    const newScale = Math.min(scale + 0.2, 2.5);
-    setScale(newScale);
-    sendMessageToWebView({ type: 'ZOOM', scale: newScale });
-  };
-
-  const zoomOut = () => {
-    const newScale = Math.max(scale - 0.2, 0.7);
-    setScale(newScale);
-    sendMessageToWebView({ type: 'ZOOM', scale: newScale });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const goToPage = (page: number) => {
-    if (page >= 1 && page <= totalPages) {
+    if (page >= 1 && page <= totalPages && pdfRef.current) {
       setCurrentPage(page);
-      sendMessageToWebView({ type: 'GO_TO_PAGE', page });
+      pdfRef.current.setPage(page);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
   };
 
@@ -253,345 +231,48 @@ const PDFReaderScreen = () => {
       : [...bookmarks, currentPage].sort((a, b) => a - b);
 
     setBookmarks(newBookmarks);
+    Haptics.notificationAsync(
+      bookmarks.includes(currentPage)
+        ? Haptics.NotificationFeedbackType.Warning
+        : Haptics.NotificationFeedbackType.Success
+    );
   };
 
-  const sendMessageToWebView = (message: any) => {
-    if (webViewRef.current) {
-      webViewRef.current.postMessage(JSON.stringify(message));
+  const handlePageChanged = (page: number, numberOfPages: number) => {
+    setCurrentPage(page);
+    if (totalPages === 0) {
+      setTotalPages(numberOfPages);
     }
   };
 
-  const handleWebViewMessage = (event: any) => {
-    try {
-      const data = JSON.parse(event.nativeEvent.data);
-      switch (data.type) {
-        case 'PAGE_CHANGED':
-          setCurrentPage(data.page);
-          break;
-        case 'TOTAL_PAGES':
-          setTotalPages(data.totalPages);
-          break;
-        case 'PDF_READY':
-          setIsLoading(false);
-          // Go to saved page after PDF is ready
-          if (currentPage > 1) {
-            setTimeout(() => goToPage(currentPage), 500);
-          }
-          break;
-        case 'PDF_ERROR':
-          setIsLoading(false);
-          Alert.alert('Error', 'Failed to load PDF content');
-          break;
-      }
-    } catch (error) {
-      console.error('Error parsing WebView message:', error);
+  const handleLoadComplete = (numberOfPages: number, filePath: string) => {
+    console.log('PDF loaded successfully:', numberOfPages, 'pages');
+    setTotalPages(numberOfPages);
+    setIsLoading(false);
+
+    // Go to saved page
+    if (currentPage > 1 && pdfRef.current) {
+      setTimeout(() => {
+        pdfRef.current?.setPage(currentPage);
+      }, 500);
     }
+
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
-  // Create HTML content for PDF viewing using PDF.js
-  const createPDFViewerHTML = () => {
-    if (!pdfUri || !book) return '';
+  const handleError = (error: any) => {
+    console.error('PDF Error:', error);
+    setIsLoading(false);
+    Alert.alert(
+      'Error Loading PDF',
+      'There was an error loading the PDF file. Please try again.',
+      [{ text: 'OK', onPress: handleClose }]
+    );
+  };
 
-    return `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
-    <title>${book.title}</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            background-color: ${isDarkMode ? '#1a1a1a' : '#f5f5f5'};
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            color: ${isDarkMode ? '#ffffff' : '#333333'};
-            overflow-x: hidden;
-            user-select: none;
-            -webkit-user-select: none;
-            -webkit-touch-callout: none;
-        }
-        
-        .pdf-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 20px 10px;
-            min-height: 100vh;
-        }
-        
-        .page-container {
-            margin-bottom: 20px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            border-radius: 8px;
-            overflow: hidden;
-            background: white;
-            display: none;
-        }
-        
-        .page-container.active {
-            display: block;
-        }
-        
-        canvas {
-            display: block;
-            max-width: 100%;
-            height: auto;
-            border-radius: 8px;
-        }
-        
-        .loading {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            font-size: 18px;
-            color: #FFA500;
-        }
-        
-        .error {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            font-size: 16px;
-            color: #ff6b6b;
-            text-align: center;
-            padding: 20px;
-        }
-        
-        .page-indicator {
-            position: fixed;
-            top: 50%;
-            right: 20px;
-            transform: translateY(-50%);
-            background: rgba(0,0,0,0.7);
-            color: white;
-            padding: 8px 12px;
-            border-radius: 20px;
-            font-size: 14px;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-            z-index: 1000;
-        }
-        
-        .page-indicator.show {
-            opacity: 1;
-        }
-    </style>
-</head>
-<body>
-    <div id="loading" class="loading">
-        📖 Loading "${book.title}"...
-    </div>
-    
-    <div id="error" class="error" style="display: none;">
-        <div>
-            ❌ Could not load PDF<br>
-            Please check your internet connection and try again.
-        </div>
-    </div>
-    
-    <div id="pdf-container" class="pdf-container" style="display: none;">
-        <!-- PDF pages will be rendered here -->
-    </div>
-    
-    <div id="page-indicator" class="page-indicator">
-        Page 1 of 1
-    </div>
-
-    <script>
-        let pdfDoc = null;
-        let currentPage = 1;
-        let totalPages = 0;
-        let scale = ${scale};
-        let renderedPages = {};
-        
-        // PDF.js worker
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-        
-        async function loadPDF() {
-            try {
-                console.log('Loading PDF from: ${pdfUri}');
-                
-                const loadingTask = pdfjsLib.getDocument('${pdfUri}');
-                pdfDoc = await loadingTask.promise;
-                totalPages = pdfDoc.numPages;
-                
-                console.log('PDF loaded successfully. Total pages:', totalPages);
-                
-                // Create page containers
-                const container = document.getElementById('pdf-container');
-                for (let i = 1; i <= totalPages; i++) {
-                    const pageDiv = document.createElement('div');
-                    pageDiv.id = 'page-' + i;
-                    pageDiv.className = 'page-container';
-                    if (i === 1) pageDiv.classList.add('active');
-                    container.appendChild(pageDiv);
-                }
-                
-                // Render first page
-                await renderPage(1);
-                
-                // Hide loading, show PDF
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('pdf-container').style.display = 'block';
-                
-                // Send ready message
-                sendMessage({ type: 'PDF_READY' });
-                sendMessage({ type: 'TOTAL_PAGES', totalPages: totalPages });
-                updatePageIndicator();
-                
-            } catch (error) {
-                console.error('Error loading PDF:', error);
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('error').style.display = 'flex';
-                sendMessage({ type: 'PDF_ERROR', error: error.message });
-            }
-        }
-        
-        async function renderPage(pageNum) {
-            if (renderedPages[pageNum]) return;
-            
-            try {
-                const page = await pdfDoc.getPage(pageNum);
-                const viewport = page.getViewport({ scale: scale });
-                
-                const canvas = document.createElement('canvas');
-                const context = canvas.getContext('2d');
-                canvas.height = viewport.height;
-                canvas.width = viewport.width;
-                
-                const renderContext = {
-                    canvasContext: context,
-                    viewport: viewport
-                };
-                
-                await page.render(renderContext).promise;
-                
-                const pageContainer = document.getElementById('page-' + pageNum);
-                pageContainer.innerHTML = '';
-                pageContainer.appendChild(canvas);
-                
-                renderedPages[pageNum] = true;
-                console.log('Rendered page:', pageNum);
-                
-            } catch (error) {
-                console.error('Error rendering page ' + pageNum + ':', error);
-            }
-        }
-        
-        function showPage(pageNum) {
-            if (pageNum < 1 || pageNum > totalPages) return;
-            
-            // Hide all pages
-            document.querySelectorAll('.page-container').forEach(page => {
-                page.classList.remove('active');
-            });
-            
-            // Show target page
-            const targetPage = document.getElementById('page-' + pageNum);
-            if (targetPage) {
-                targetPage.classList.add('active');
-                currentPage = pageNum;
-                
-                // Render page if not already rendered
-                renderPage(pageNum);
-                
-                // Pre-render adjacent pages
-                if (pageNum > 1) renderPage(pageNum - 1);
-                if (pageNum < totalPages) renderPage(pageNum + 1);
-                
-                sendMessage({ type: 'PAGE_CHANGED', page: currentPage });
-                updatePageIndicator();
-                
-                // Scroll to top
-                window.scrollTo(0, 0);
-            }
-        }
-        
-        function updatePageIndicator() {
-            const indicator = document.getElementById('page-indicator');
-            indicator.textContent = \`Page \${currentPage} of \${totalPages}\`;
-            indicator.classList.add('show');
-            setTimeout(() => {
-                indicator.classList.remove('show');
-            }, 2000);
-        }
-        
-        async function reRenderAllPages() {
-            renderedPages = {};
-            for (let i = 1; i <= totalPages; i++) {
-                const pageContainer = document.getElementById('page-' + i);
-                if (pageContainer) {
-                    pageContainer.innerHTML = '<div style="padding: 20px; text-align: center;">Loading...</div>';
-                }
-            }
-            await renderPage(currentPage);
-            // Re-render adjacent pages
-            if (currentPage > 1) await renderPage(currentPage - 1);
-            if (currentPage < totalPages) await renderPage(currentPage + 1);
-        }
-        
-        function sendMessage(data) {
-            if (window.ReactNativeWebView) {
-                window.ReactNativeWebView.postMessage(JSON.stringify(data));
-            }
-        }
-        
-        // Listen for messages from React Native
-        window.addEventListener('message', async (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                switch (data.type) {
-                    case 'GO_TO_PAGE':
-                        showPage(data.page);
-                        break;
-                    case 'ZOOM':
-                        scale = data.scale;
-                        await reRenderAllPages();
-                        break;
-                }
-            } catch (error) {
-                console.error('Error handling message:', error);
-            }
-        });
-        
-        // Touch handling for page navigation
-        let touchStartX = 0;
-        let touchStartY = 0;
-        
-        document.addEventListener('touchstart', (e) => {
-            touchStartX = e.touches[0].clientX;
-            touchStartY = e.touches[0].clientY;
-        });
-        
-        document.addEventListener('touchend', (e) => {
-            const touchEndX = e.changedTouches[0].clientX;
-            const touchEndY = e.changedTouches[0].clientY;
-            const diffX = touchStartX - touchEndX;
-            const diffY = Math.abs(touchStartY - touchEndY);
-            
-            // Only process horizontal swipes
-            if (Math.abs(diffX) > 50 && diffY < 100) {
-                if (diffX > 0 && currentPage < totalPages) {
-                    showPage(currentPage + 1);
-                } else if (diffX < 0 && currentPage > 1) {
-                    showPage(currentPage - 1);
-                }
-            }
-        });
-        
-        // Initialize
-        loadPDF();
-    </script>
-</body>
-</html>`;
+  const getProgressPercentage = () => {
+    if (totalPages === 0) return 0;
+    return Math.round((currentPage / totalPages) * 100);
   };
 
   const isBookmarked = bookmarks.includes(currentPage);
@@ -613,6 +294,10 @@ const PDFReaderScreen = () => {
         translateY: withTiming(showControls ? 0 : 100, { duration: 300 }),
       },
     ],
+  }));
+
+  const progressBarStyle = useAnimatedStyle(() => ({
+    width: withTiming(`${getProgressPercentage()}%`, { duration: 500 }),
   }));
 
   if (!book || isLoading || !pdfUri) {
@@ -637,6 +322,11 @@ const PDFReaderScreen = () => {
           >
             This may take a moment for large files
           </Text>
+          {book && (
+            <Text style={[styles.bookLoadingTitle, { color: colors.primary }]}>
+              {book.title}
+            </Text>
+          )}
         </View>
       </View>
     );
@@ -655,34 +345,56 @@ const PDFReaderScreen = () => {
         backgroundColor={showControls ? colors.primary : colors.background}
       />
 
-      {/* PDF WebView */}
+      {/* PDF Viewer */}
       <View style={styles.pdfContainer}>
         <TouchableOpacity
           style={styles.pdfTouchable}
           onPress={toggleControls}
           activeOpacity={1}
         >
-          <WebView
-            ref={webViewRef}
-            source={{ html: createPDFViewerHTML() }}
-            style={styles.webview}
-            onMessage={handleWebViewMessage}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            allowsInlineMediaPlayback={true}
-            showsVerticalScrollIndicator={false}
-            showsHorizontalScrollIndicator={false}
-            scrollEnabled={true}
-            bounces={true}
-            onError={(error) => {
-              console.error('WebView error:', error);
-              Alert.alert('Error', 'Failed to load PDF viewer');
-            }}
-            onLoadEnd={() => {
-              console.log('WebView loaded');
-            }}
+          <Pdf
+            ref={pdfRef}
+            source={{ uri: pdfUri, cache: true }}
+            style={styles.pdf}
+            onLoadComplete={handleLoadComplete}
+            onPageChanged={handlePageChanged}
+            onError={handleError}
+            page={currentPage}
+            minScale={0.5}
+            maxScale={3.0}
+            horizontal={true}
+            spacing={10}
+            password=""
+            enablePaging={true}
+            enableRTL={false}
+            enableAnnotationRendering={true}
+            enableDoubleTapZoom={true}
+            trustAllCerts={false}
+            singlePage={false}
+            // fitWidth={true}
+            // activityIndicatorProps={{
+            //   color: colors.primary,
+            //   progressTintColor: colors.primary,
+            // }}
           />
         </TouchableOpacity>
+      </View>
+
+      {/* Progress Bar */}
+      <View
+        style={[styles.progressContainer, { backgroundColor: colors.surface }]}
+      >
+        <View
+          style={[styles.progressBar, { backgroundColor: colors.lightGray }]}
+        >
+          <Animated.View
+            style={[
+              styles.progressFill,
+              { backgroundColor: colors.primary },
+              progressBarStyle,
+            ]}
+          />
+        </View>
       </View>
 
       {/* Top Controls */}
@@ -723,6 +435,9 @@ const PDFReaderScreen = () => {
                   numberOfLines={1}
                 >
                   by {book.author}
+                </Text>
+                <Text style={[styles.progressText, { color: colors.white }]}>
+                  {getProgressPercentage()}% complete
                 </Text>
               </View>
 
@@ -786,7 +501,7 @@ const PDFReaderScreen = () => {
 
                 <View style={styles.pageInfo}>
                   <Text style={[styles.pageText, { color: colors.white }]}>
-                    {currentPage} / {totalPages}
+                    {currentPage} of {totalPages}
                   </Text>
                 </View>
 
@@ -801,27 +516,12 @@ const PDFReaderScreen = () => {
                   <ChevronRight size={24} color={colors.white} />
                 </TouchableOpacity>
               </View>
-
-              {/* Zoom Controls */}
-              <View style={styles.zoomControls}>
-                <TouchableOpacity onPress={zoomOut} style={styles.zoomButton}>
-                  <ZoomOut size={20} color={colors.white} />
-                </TouchableOpacity>
-
-                <Text style={[styles.zoomText, { color: colors.white }]}>
-                  {Math.round(scale * 100)}%
-                </Text>
-
-                <TouchableOpacity onPress={zoomIn} style={styles.zoomButton}>
-                  <ZoomIn size={20} color={colors.white} />
-                </TouchableOpacity>
-              </View>
             </View>
           </SafeAreaView>
         </Animated.View>
       )}
 
-      {/* Settings Modal */}
+      {/* Simple Settings Modal */}
       <Modal
         visible={showSettings}
         animationType="slide"
@@ -829,16 +529,19 @@ const PDFReaderScreen = () => {
         onRequestClose={() => setShowSettings(false)}
       >
         <View
-          style={[styles.settingsModal, { backgroundColor: colors.background }]}
+          style={[
+            styles.modalContainer,
+            { backgroundColor: colors.background },
+          ]}
         >
           <View
             style={[
-              styles.settingsHeader,
+              styles.modalHeader,
               { borderBottomColor: colors.textSecondary },
             ]}
           >
-            <Text style={[styles.settingsTitle, { color: colors.textPrimary }]}>
-              Reading Settings
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+              Settings
             </Text>
             <TouchableOpacity
               onPress={() => setShowSettings(false)}
@@ -848,7 +551,7 @@ const PDFReaderScreen = () => {
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.settingsContent}>
+          <ScrollView style={styles.modalContent}>
             {/* Theme Toggle */}
             <View style={styles.settingItem}>
               <View style={styles.settingInfo}>
@@ -899,30 +602,13 @@ const PDFReaderScreen = () => {
             {/* Bookmarks */}
             {bookmarks.length > 0 && (
               <>
-                <View style={styles.settingItem}>
-                  <View style={styles.settingInfo}>
-                    <Bookmark size={24} color={colors.textPrimary} />
-                    <View style={styles.settingTextContainer}>
-                      <Text
-                        style={[
-                          styles.settingLabel,
-                          { color: colors.textPrimary },
-                        ]}
-                      >
-                        Bookmarks ({bookmarks.length})
-                      </Text>
-                      <Text
-                        style={[
-                          styles.settingDescription,
-                          { color: colors.textSecondary },
-                        ]}
-                      >
-                        Your saved pages
-                      </Text>
-                    </View>
-                  </View>
+                <View style={styles.sectionHeader}>
+                  <Text
+                    style={[styles.sectionTitle, { color: colors.textPrimary }]}
+                  >
+                    Bookmarks ({bookmarks.length})
+                  </Text>
                 </View>
-
                 {bookmarks.map((bookmark, index) => (
                   <TouchableOpacity
                     key={bookmark}
@@ -935,6 +621,7 @@ const PDFReaderScreen = () => {
                       setShowSettings(false);
                     }}
                   >
+                    <Bookmark size={16} color={colors.primary} />
                     <Text
                       style={[
                         styles.bookmarkText,
@@ -949,33 +636,81 @@ const PDFReaderScreen = () => {
               </>
             )}
 
-            {/* Reset Zoom */}
-            <TouchableOpacity
-              style={[styles.settingItem, styles.actionItem]}
-              onPress={() => {
-                setScale(1.0);
-                sendMessageToWebView({ type: 'ZOOM', scale: 1.0 });
-              }}
+            {/* Book Info */}
+            <View style={styles.sectionHeader}>
+              <Text
+                style={[styles.sectionTitle, { color: colors.textPrimary }]}
+              >
+                About This Book
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.bookInfoContainer,
+                { backgroundColor: colors.surface },
+              ]}
             >
-              <View style={styles.settingInfo}>
-                <RotateCcw size={24} color={colors.textPrimary} />
-                <View style={styles.settingTextContainer}>
-                  <Text
-                    style={[styles.settingLabel, { color: colors.textPrimary }]}
-                  >
-                    Reset Zoom
-                  </Text>
-                  <Text
-                    style={[
-                      styles.settingDescription,
-                      { color: colors.textSecondary },
-                    ]}
-                  >
-                    Return to default zoom level
-                  </Text>
-                </View>
+              <Text
+                style={[styles.bookInfoTitle, { color: colors.textPrimary }]}
+              >
+                {book.title}
+              </Text>
+              <Text
+                style={[styles.bookInfoAuthor, { color: colors.textSecondary }]}
+              >
+                by {book.author}
+              </Text>
+              <Text
+                style={[
+                  styles.bookInfoDescription,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                {book.description}
+              </Text>
+              <View style={styles.bookInfoMeta}>
+                <Text
+                  style={[
+                    styles.bookInfoMetaText,
+                    { color: colors.textSecondary },
+                  ]}
+                >
+                  Category:{' '}
+                  {book.category === 'religious'
+                    ? 'Religious & Devotional'
+                    : 'Novels & Stories'}
+                </Text>
+                <Text
+                  style={[
+                    styles.bookInfoMetaText,
+                    { color: colors.textSecondary },
+                  ]}
+                >
+                  Language:{' '}
+                  {book.language === 'hindi'
+                    ? 'Hindi'
+                    : book.language === 'english'
+                    ? 'English'
+                    : 'Both'}
+                </Text>
+                <Text
+                  style={[
+                    styles.bookInfoMetaText,
+                    { color: colors.textSecondary },
+                  ]}
+                >
+                  Total Pages: {totalPages}
+                </Text>
+                <Text
+                  style={[
+                    styles.bookInfoMetaText,
+                    { color: colors.textSecondary },
+                  ]}
+                >
+                  Progress: {getProgressPercentage()}%
+                </Text>
               </View>
-            </TouchableOpacity>
+            </View>
           </ScrollView>
         </View>
       </Modal>
@@ -1006,15 +741,39 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
+  bookLoadingTitle: {
+    fontFamily: TYPOGRAPHY.heading.fontFamily,
+    fontSize: 20,
+    marginTop: 16,
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
   pdfContainer: {
     flex: 1,
   },
   pdfTouchable: {
     flex: 1,
   },
-  webview: {
+  pdf: {
     flex: 1,
-    backgroundColor: 'transparent',
+    width: width,
+    height: height,
+  },
+  progressContainer: {
+    height: 3,
+    width: '100%',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 999,
+  },
+  progressBar: {
+    flex: 1,
+    height: '100%',
+  },
+  progressFill: {
+    height: '100%',
   },
   topControls: {
     position: 'absolute',
@@ -1033,7 +792,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    minHeight: 60,
+    minHeight: 70,
   },
   topLeft: {
     flexDirection: 'row',
@@ -1055,7 +814,7 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    marginHorizontal: 4,
+    marginHorizontal: 3,
     minWidth: 40,
     minHeight: 40,
     justifyContent: 'center',
@@ -1071,6 +830,13 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.body.fontFamily,
     fontSize: 12,
     opacity: 0.9,
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  progressText: {
+    fontFamily: TYPOGRAPHY.body.fontFamily,
+    fontSize: 11,
+    opacity: 0.8,
     marginTop: 2,
     textAlign: 'center',
   },
@@ -1094,13 +860,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
   },
   navButton: {
     padding: 8,
     borderRadius: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    marginHorizontal: 20,
+    marginHorizontal: 40,
     minWidth: 44,
     minHeight: 44,
     justifyContent: 'center',
@@ -1109,9 +874,9 @@ const styles = StyleSheet.create({
   pageInfo: {
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     paddingHorizontal: 20,
-    paddingVertical: 8,
+    paddingVertical: 12,
     borderRadius: 20,
-    minWidth: 100,
+    minWidth: 120,
     alignItems: 'center',
   },
   pageText: {
@@ -1119,34 +884,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  zoomControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  zoomButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    marginHorizontal: 20,
-    minWidth: 44,
-    minHeight: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  zoomText: {
-    fontFamily: TYPOGRAPHY.body.fontFamily,
-    fontSize: 14,
-    fontWeight: '600',
-    minWidth: 60,
-    textAlign: 'center',
-  },
 
-  // Settings Modal Styles
-  settingsModal: {
+  // Modal Styles
+  modalContainer: {
     flex: 1,
   },
-  settingsHeader: {
+  modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1154,7 +897,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderBottomWidth: 1,
   },
-  settingsTitle: {
+  modalTitle: {
     fontFamily: TYPOGRAPHY.heading.fontFamily,
     fontSize: 20,
     fontWeight: 'bold',
@@ -1162,10 +905,12 @@ const styles = StyleSheet.create({
   closeButton: {
     padding: 8,
   },
-  settingsContent: {
+  modalContent: {
     flex: 1,
     paddingHorizontal: 20,
   },
+
+  // Settings Styles
   settingItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1173,9 +918,6 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(0,0,0,0.1)',
-  },
-  actionItem: {
-    borderBottomWidth: 0,
   },
   settingInfo: {
     flexDirection: 'row',
@@ -1208,19 +950,66 @@ const styles = StyleSheet.create({
     height: 26,
     borderRadius: 13,
   },
+
+  // Section Styles
+  sectionHeader: {
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  sectionTitle: {
+    fontFamily: TYPOGRAPHY.heading.fontFamily,
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+
+  // Bookmark Styles
   bookmarkItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
     marginVertical: 4,
-    marginLeft: 40,
     borderRadius: 8,
   },
   bookmarkText: {
     fontFamily: TYPOGRAPHY.body.fontFamily,
     fontSize: 14,
+    flex: 1,
+    marginLeft: 12,
+  },
+
+  // Book Info Styles
+  bookInfoContainer: {
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  bookInfoTitle: {
+    fontFamily: TYPOGRAPHY.heading.fontFamily,
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  bookInfoAuthor: {
+    fontFamily: TYPOGRAPHY.body.fontFamily,
+    fontSize: 16,
+    marginBottom: 8,
+  },
+  bookInfoDescription: {
+    fontFamily: TYPOGRAPHY.body.fontFamily,
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  bookInfoMeta: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(0,0,0,0.1)',
+    paddingTop: 12,
+  },
+  bookInfoMetaText: {
+    fontFamily: TYPOGRAPHY.body.fontFamily,
+    fontSize: 12,
+    marginBottom: 4,
   },
 });
 
