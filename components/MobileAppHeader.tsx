@@ -424,7 +424,7 @@ export default function MobileAppHeader({
                   onPress={handleBack}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <ArrowLeft size={24} color={iconColor} />
+                  <ArrowLeft size={20} color={iconColor} />
                 </TouchableOpacity>
               )}
 
@@ -434,7 +434,7 @@ export default function MobileAppHeader({
                   onPress={handleRefresh}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <RefreshCw size={20} color={iconColor} />
+                  <RefreshCw size={18} color={iconColor} />
                 </TouchableOpacity>
               )}
 
@@ -444,7 +444,7 @@ export default function MobileAppHeader({
                 onPress={handleMenuPress}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Menu size={24} color={iconColor} />
+                <Menu size={20} color={iconColor} />
               </TouchableOpacity>
             </View>
           </View>
@@ -645,7 +645,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     minHeight: 60,
     borderBottomColor: COLORS.primary,
-    borderBottomWidth: 1,
+    borderBottomWidth: 2,
   },
   leftSection: {
     flexDirection: 'row',
@@ -658,10 +658,10 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   iconButton: {
-    padding: 10,
+    padding: 4,
     borderRadius: 24,
-    minWidth: 44,
-    minHeight: 44,
+    minWidth: 36,
+    minHeight: 36,
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 2,
@@ -671,7 +671,7 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
   },
   logo: {
-    width: 150,
+    width: 180,
     height: 32,
     marginRight: 12,
   },

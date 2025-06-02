@@ -80,10 +80,10 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === 'ios' ? 30 : 10,
     paddingTop: 10,
     elevation: 8,
-    shadowOffset: { width: 0, height: -1 },
-    shadowOpacity: 0.6,
-    shadowRadius: 4,
-    // Remove shadowColor - it's now dynamic
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    shadowColor: COLORS.primary,
   },
   tabBarLabel: {
     fontFamily: TYPOGRAPHY.body.fontFamily,

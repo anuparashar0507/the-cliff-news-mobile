@@ -301,7 +301,7 @@ export default function CategoryNavigationHeader({
     >
       {/* Active Category Indicator Line */}
       <View
-        style={[styles.indicatorLine, { backgroundColor: colors.primary }]}
+        style={[styles.indicatorLine, { backgroundColor: colors.secondary }]}
       />
 
       <ScrollView
@@ -341,11 +341,11 @@ export default function CategoryNavigationHeader({
             </Text>
 
             {/* Active category indicator dot */}
-            {selectedCategory === category.id && (
+            {/* {selectedCategory === category.id && (
               <View
                 style={[styles.activeDot, { backgroundColor: COLORS.white }]}
               />
-            )}
+            )} */}
 
             {/* Subtle pulse animation for active category */}
             {selectedCategory === category.id && (
@@ -401,7 +401,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 3,
+    height: 2,
     zIndex: 1,
   },
   scrollView: {
