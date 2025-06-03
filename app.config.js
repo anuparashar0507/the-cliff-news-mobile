@@ -65,11 +65,6 @@ module.exports = {
           ios: {
             deploymentTarget: '15.1',
           },
-          android: {
-            compileSdkVersion: 35,
-            targetSdkVersion: 35,
-            minSdkVersion: 21,
-          },
         },
       ],
       [
