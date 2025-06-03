@@ -66,8 +66,8 @@ module.exports = {
             deploymentTarget: '15.1',
           },
           android: {
-            compileSdkVersion: 34,
-            targetSdkVersion: 34,
+            compileSdkVersion: 35,
+            targetSdkVersion: 35,
             minSdkVersion: 21,
           },
         },
