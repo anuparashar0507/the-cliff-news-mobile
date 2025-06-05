@@ -39,10 +39,10 @@
   "submit": {
     "production": {
       "ios": {
-        "ascAppId": "6746549944",
+        "ascAppId": "6746549944"
       },
       "android": {
-        "serviceAccountKeyPath": "/Users/anupamparashar/Desktop/Projects/Inventrix/TheCliffNews/Keys and Secret/the-cliff-news-mobile-6e87a92f353e.json",
+        "serviceAccountKeyPath": "/Users/anupamparashar/Desktop/Projects/Inventrix/TheCliffNews/Keys and Secret/the-cliff-news-mobile-6e87a92f353e.json"
       }
     }
   }
