@@ -6,27 +6,43 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "ios": {
+        "autoIncrement": true
+      },
+      "android": {
+        "autoIncrement": true
+      }
     },
     "preview": {
       "distribution": "internal",
       "ios": {
-        "simulator": true
+        "simulator": true,
+        "autoIncrement": true
+      },
+      "android": {
+        "autoIncrement": true
       }
     },
     "production": {
       "env": {
         "APP_ENV": "production"
+      },
+      "ios": {
+        "autoIncrement": true
+      },
+      "android": {
+        "autoIncrement": true
       }
     }
   },
   "submit": {
     "production": {
       "ios": {
-        "ascAppId": "6746549944"
+        "ascAppId": "6746549944",
       },
       "android": {
-        "serviceAccountKeyPath": "/Users/anupamparashar/Desktop/Projects/Inventrix/TheCliffNews/Keys and Secret/the-cliff-news-mobile-6e87a92f353e.json"
+        "serviceAccountKeyPath": "/Users/anupamparashar/Desktop/Projects/Inventrix/TheCliffNews/Keys and Secret/the-cliff-news-mobile-6e87a92f353e.json",
       }
     }
   }
