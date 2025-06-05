@@ -24,6 +24,12 @@ module.exports = {
             },
           },
         },
+        NSPhotoLibraryUsageDescription:
+          'This app needs access to your photo library so you can select photos if a feature within our web content requires it (e.g., for ad booking forms or other interactions).',
+        NSCameraUsageDescription:
+          'This app needs access to your camera if you choose to capture photos or videos for features within our web content (e.g., for ad booking forms or other interactions).',
+        NSLocationWhenInUseUsageDescription:
+          'This app can use your location to provide location-based news or enhance your experience with relevant local content, if you choose to share it.',
       },
       entitlements: {
         'aps-environment':
