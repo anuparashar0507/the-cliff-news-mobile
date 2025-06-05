@@ -38,7 +38,7 @@ module.exports = {
         foregroundImage: './assets/images/adaptive-icon.png',
         backgroundColor: '#FFA500',
       },
-      package: 'com.thecliff.news',
+      package: 'com.thecliffnews',
       versionCode: 1,
       permissions: [
         'INTERNET',

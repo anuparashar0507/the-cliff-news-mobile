@@ -21,6 +21,10 @@
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "/Users/anupamparashar/Desktop/Projects/Inventrix/TheCliffNews/Keys and Secret/the-cliff-news-mobile-6e87a92f353e.json"
+      }
+    }
   }
 }
